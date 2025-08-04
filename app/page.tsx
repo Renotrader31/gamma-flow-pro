@@ -1,4 +1,4 @@
-import GammaFlowPro from './components/GammaFlowPro';
+import GammaFlowPro from '@/app/components/GammaFlowPro';
 
 export default function Home() {
   return (
