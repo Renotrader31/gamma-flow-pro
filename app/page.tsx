@@ -1,4 +1,3 @@
-// /app/page.tsx
 import GammaFlowPro from './components/GammaFlowPro';
 
 export default function Home() {
