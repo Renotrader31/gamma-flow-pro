@@ -490,7 +490,8 @@ const scannerStrategies = [
             <span>Quality Filter: Min $5 price, 1M+ volume</span>
           </div>
         </div>
-      )}          
+      )}
+          
         {/* Scanner Mode */}
         {mode === 'scanner' ? (
           <div>
