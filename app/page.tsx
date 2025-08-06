@@ -262,81 +262,82 @@ export default function Home() {
     return () => clearInterval(timer)
   }, [])
   
-  // Scanner strategies
-const scannerStrategies = [
-  {
-    id: 'gammaSqueezer',
-    name: 'Top Movers',
-    description: 'Stocks with significant price movement',
-    icon: Flame,
-    color: 'text-orange-400',
-    bgColor: 'bg-orange-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 5 && s.changePercent && Math.abs(s.changePercent) > 3 && s.volume > 1000000)
-      .sort((a, b) => Math.abs(b.changePercent || 0) - Math.abs(a.changePercent || 0))
-      .slice(0, 20)
-  },
-  {
-    id: 'darkPoolAccumulation',
-    name: 'High Volume',
-    description: 'Stocks with high trading volume',
-    icon: Moon,
-    color: 'text-purple-400',
-    bgColor: 'bg-purple-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 10 && s.volume && s.volume > 20000000)
-      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
-      .slice(0, 20)
-  },
-  {
-    id: 'optionsWhale',
-    name: 'Large Caps',
-    description: 'Large market cap stocks',
-    icon: Activity,
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 20 && s.marketCap && s.marketCap > 10000000000) // $10B+ market cap
-      .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
-      .slice(0, 20)
-  },
-  {
-    id: 'ivCrush',
-    name: 'IV Crush Play',
-    description: 'High IV rank for premium selling',
-    icon: Gauge,
-    color: 'text-red-400',
-    bgColor: 'bg-red-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 15 && s.ivRank && s.ivRank > 70 && s.volume > 500000)
-      .sort((a, b) => (b.ivRank || 0) - (a.ivRank || 0))
-      .slice(0, 20)
-  },
-  {
-    id: 'gammaWall',
-    name: 'Gamma Wall Pin',
-    description: 'Stocks pinned by gamma exposure',
-    icon: Shield,
-    color: 'text-green-400',
-    bgColor: 'bg-green-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 20 && s.gex && s.gex > 100000000 && s.volume > 1000000) // Lowered GEX threshold but added price filter
-      .sort((a, b) => (b.gex || 0) - (a.gex || 0))
-      .slice(0, 20)
-  },
-  {
-    id: 'shortSqueeze',
-    name: 'Short Squeeze Setup',
-    description: 'High SI with positive flow',
-    icon: Target,
-    color: 'text-yellow-400',
-    bgColor: 'bg-yellow-900/20',
-    filter: (stocks: any[]) => stocks
-      .filter(s => s.price > 10 && s.flowScore && s.flowScore > 75 && s.changePercent > 2) // More realistic thresholds
-      .sort((a, b) => (b.flowScore || 0) - (a.flowScore || 0))
-      .slice(0, 20)
-  }
-]  
+  // Scanner strategies with better filtering
+  const scannerStrategies = [
+    {
+      id: 'gammaSqueezer',
+      name: 'Top Movers',
+      description: 'Stocks with significant price movement',
+      icon: Flame,
+      color: 'text-orange-400',
+      bgColor: 'bg-orange-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 5 && s.changePercent && Math.abs(s.changePercent) > 3 && s.volume > 1000000)
+        .sort((a, b) => Math.abs(b.changePercent || 0) - Math.abs(a.changePercent || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'darkPoolAccumulation',
+      name: 'High Volume',
+      description: 'Stocks with high trading volume',
+      icon: Moon,
+      color: 'text-purple-400',
+      bgColor: 'bg-purple-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 10 && s.volume && s.volume > 20000000)
+        .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'optionsWhale',
+      name: 'Large Caps',
+      description: 'Large market cap stocks',
+      icon: Activity,
+      color: 'text-blue-400',
+      bgColor: 'bg-blue-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 20 && s.marketCap && s.marketCap > 10000000000)
+        .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'ivCrush',
+      name: 'IV Crush Play',
+      description: 'High IV rank for premium selling',
+      icon: Gauge,
+      color: 'text-red-400',
+      bgColor: 'bg-red-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 15 && s.ivRank && s.ivRank > 70 && s.volume > 500000)
+        .sort((a, b) => (b.ivRank || 0) - (a.ivRank || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'gammaWall',
+      name: 'Gamma Wall Pin',
+      description: 'Stocks pinned by gamma exposure',
+      icon: Shield,
+      color: 'text-green-400',
+      bgColor: 'bg-green-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 20 && s.gex && s.gex > 100000000 && s.volume > 1000000)
+        .sort((a, b) => (b.gex || 0) - (a.gex || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'shortSqueeze',
+      name: 'Short Squeeze Setup',
+      description: 'High SI with positive flow',
+      icon: Target,
+      color: 'text-yellow-400',
+      bgColor: 'bg-yellow-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 10 && s.flowScore && s.flowScore > 75 && s.changePercent > 2)
+        .sort((a, b) => (b.flowScore || 0) - (a.flowScore || 0))
+        .slice(0, 20)
+    }
+  ]
+  
   // Filter stocks for screener
   const filterStocks = (stockList: any[] = []) => {
     if (!stockList || stockList.length === 0) return []
@@ -474,24 +475,26 @@ const scannerStrategies = [
               Scanner Mode
             </button>
           </div>
-{mode === 'scanner' && (
-        <div className="flex gap-3">
-          <button
-            onClick={runAllScans}
-            disabled={stockData.length === 0}
-            className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-          >
-            <PlayCircle className="w-5 h-5" />
-            Scan All Strategies
-          </button>
           
-          <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
-            <Shield className="w-4 h-4 text-green-400" />
-            <span>Quality Filter: Min $5 price, 1M+ volume</span>
-          </div>
+          {mode === 'scanner' && (
+            <div className="flex gap-3">
+              <button
+                onClick={runAllScans}
+                disabled={stockData.length === 0}
+                className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+              >
+                <PlayCircle className="w-5 h-5" />
+                Scan All Strategies
+              </button>
+              
+              <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
+                <Shield className="w-4 h-4 text-green-400" />
+                <span>Quality Filter: Min $5 price, 1M+ volume</span>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-          
+
         {/* Scanner Mode */}
         {mode === 'scanner' ? (
           <div>
@@ -575,8 +578,8 @@ const scannerStrategies = [
                     </thead>
                     <tbody>
                       {scanResults[selectedStrategy].map((stock: any) => (
-                        <React.Fragment key={stock.symbol}>
-                          <tr className="border-t border-gray-800 hover:bg-gray-800">
+                        <>
+                          <tr key={stock.symbol} className="border-t border-gray-800 hover:bg-gray-800">
                             <td className="p-3 font-medium">{stock.symbol}</td>
                             <td className="p-3 text-gray-300">{stock.name || stock.symbol}</td>
                             <td className="p-3 text-right">${stock.price?.toFixed(2)}</td>
@@ -653,7 +656,7 @@ const scannerStrategies = [
                               </td>
                             </tr>
                           )}
-                        </React.Fragment>
+                        </>
                       ))}
                     </tbody>
                   </table>
@@ -795,8 +798,8 @@ const scannerStrategies = [
                     </thead>
                     <tbody>
                       {results.slice(0, 50).map((stock: any) => (
-                        <React.Fragment key={stock.symbol}>
-                          <tr className="border-t border-gray-800 hover:bg-gray-800">
+                        <>
+                          <tr key={stock.symbol} className="border-t border-gray-800 hover:bg-gray-800">
                             <td className="p-3 font-medium">{stock.symbol}</td>
                             <td className="p-3 text-gray-300">{stock.name || stock.symbol}</td>
                             <td className="p-3 text-right">${stock.price?.toFixed(2)}</td>
@@ -849,7 +852,7 @@ const scannerStrategies = [
                               </td>
                             </tr>
                           )}
-                        </React.Fragment>
+                        </>
                       ))}
                     </tbody>
                   </table>
