@@ -8,8 +8,50 @@ export default function Home() {
   const [isScanning, setIsScanning] = useState(false)
   const [mode, setMode] = useState<'screener' | 'scanner'>('scanner')
   const [scanResults, setScanResults] = useState<{[key: string]: number}>({})
-  const [selectedScanner, setSelectedScanner] = useState<string | null>(null)
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null)
   const [showResults, setShowResults] = useState(false)
+  const [marketStatus, setMarketStatus] = useState('closed')
+  const [aiIdeas, setAiIdeas] = useState<any[]>([])
+  const [showAI, setShowAI] = useState(false)
+  
+  // Mock real-time stock data
+  const stockDatabase: {[key: string]: any[]} = {
+    movers: [
+      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, score: 95 },
+      { symbol: 'TSLA', price: 242.15, change: 8.3, volume: 38000000, gamma: 0.75, iv: 0.52, score: 92 },
+      { symbol: 'AMD', price: 142.30, change: 6.8, volume: 28000000, gamma: 0.68, iv: 0.48, score: 89 },
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, score: 87 },
+      { symbol: 'META', price: 485.20, change: 5.1, volume: 18000000, gamma: 0.62, iv: 0.38, score: 85 },
+    ],
+    volume: [
+      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, iv: 0.18, score: 98 },
+      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, iv: 0.22, score: 94 },
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, score: 91 },
+      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, score: 88 },
+      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, score: 85 },
+    ],
+    caps: [
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, marketCap: 3000, score: 96 },
+      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, marketCap: 2900, score: 94 },
+      { symbol: 'GOOGL', price: 138.45, change: 1.8, volume: 28000000, gamma: 0.48, iv: 0.32, marketCap: 1800, score: 92 },
+      { symbol: 'AMZN', price: 178.20, change: 2.5, volume: 35000000, gamma: 0.55, iv: 0.35, marketCap: 1700, score: 90 },
+    ],
+    iv: [
+      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, gamma: 0.35, iv: 1.25, score: 98 },
+      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, gamma: 0.28, iv: 1.15, score: 95 },
+      { symbol: 'RIVN', price: 12.30, change: 1.5, volume: 15000000, gamma: 0.42, iv: 0.95, score: 88 },
+    ],
+    gamma: [
+      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, pin: 440, score: 99 },
+      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, pin: 365, score: 97 },
+      { symbol: 'IWM', price: 198.30, change: 1.5, volume: 32000000, gamma: 0.78, pin: 200, score: 94 },
+    ],
+    squeeze: [
+      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, si: 45.2, daysToC: 2.5, score: 97 },
+      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, si: 38.5, daysToC: 1.8, score: 94 },
+      { symbol: 'BYND', price: 6.75, change: 2.1, volume: 3500000, si: 35.8, daysToC: 3.2, score: 90 },
+    ]
+  }
   
   useEffect(() => {
     const updateTime = () => {
@@ -19,10 +61,27 @@ export default function Home() {
         minute: '2-digit', 
         second: '2-digit' 
       }))
+      
+      // Check market hours
+      const hours = now.getHours()
+      const minutes = now.getMinutes()
+      const totalMinutes = hours * 60 + minutes
+      const marketOpen = 9 * 60 + 30
+      const marketClose = 16 * 60
+      
+      if (totalMinutes >= marketOpen && totalMinutes <= marketClose && now.getDay() !== 0 && now.getDay() !== 6) {
+        setMarketStatus('open')
+      } else if (totalMinutes < marketOpen && now.getDay() !== 0 && now.getDay() !== 6) {
+        setMarketStatus('pre-market')
+      } else if (totalMinutes > marketClose && totalMinutes < 20 * 60 && now.getDay() !== 0 && now.getDay() !== 6) {
+        setMarketStatus('after-hours')
+      } else {
+        setMarketStatus('closed')
+      }
     }
+    
     updateTime()
     const interval = setInterval(updateTime, 1000)
-    
     setTimeout(() => setIsOnline(true), 1000)
     
     return () => clearInterval(interval)
@@ -41,66 +100,114 @@ export default function Home() {
     setIsScanning(true)
     setScanResults({})
     
-    // Simulate scanning with progressive results
     scanners.forEach((scanner, index) => {
       setTimeout(() => {
         setScanResults(prev => ({
           ...prev,
-          [scanner.id]: Math.floor(Math.random() * 15) + 1
+          [scanner.id]: stockDatabase[scanner.id]?.length || 0
         }))
-      }, (index + 1) * 500)
+      }, (index + 1) * 300)
     })
 
     setTimeout(() => {
       setIsScanning(false)
-      alert('🎯 Full Scan Complete!\n\nTotal stocks found: ' + 
-        Object.values(scanResults).reduce((a, b) => a + (b || 0), 0) + 
-        '\n\nTop opportunities identified across all strategies!')
-    }, scanners.length * 500 + 500)
+      generateAIIdeas()
+    }, scanners.length * 300 + 500)
   }
 
   const scanAll = () => {
     setIsScanning(true)
     setScanResults({})
     
-    alert('🔄 Scanning all strategies simultaneously...')
-    
-    // Simulate scanning all at once
     setTimeout(() => {
       const results: {[key: string]: number} = {}
       scanners.forEach(scanner => {
-        results[scanner.id] = Math.floor(Math.random() * 20) + 1
+        results[scanner.id] = stockDatabase[scanner.id]?.length || 0
       })
       setScanResults(results)
       setIsScanning(false)
-      
-      const total = Object.values(results).reduce((a, b) => a + b, 0)
-      alert(`✅ All Strategies Scanned!\n\nTotal opportunities found: ${total}\n\nTop performing strategies:\n` +
-        scanners.map(s => `• ${s.title}: ${results[s.id]} stocks`).join('\n'))
-    }, 2000)
+      generateAIIdeas()
+    }, 1500)
   }
 
   const scanSingle = (scannerId: string) => {
     setIsScanning(true)
-    setSelectedScanner(scannerId)
     setScanResults(prev => ({ ...prev, [scannerId]: 0 }))
     
-    const scanner = scanners.find(s => s.id === scannerId)
-    
     setTimeout(() => {
-      const results = Math.floor(Math.random() * 15) + 1
       setScanResults(prev => ({
         ...prev,
-        [scannerId]: results
+        [scannerId]: stockDatabase[scannerId]?.length || 0
       }))
       setIsScanning(false)
-      
-      if (scanner) {
-        alert(`✅ ${scanner.title} Scan Complete!\n\nFound ${results} stocks matching criteria:\n${
-          results > 0 ? `• Top picks: AAPL, MSFT, GOOGL...\n• Best setup: NVDA +2.5% momentum` : 'No matches at this time'
-        }\n\nClick "View Results" to see details.`)
-      }
-    }, 1500)
+    }, 1000)
+  }
+
+  const generateAIIdeas = () => {
+    const ideas = [
+      { 
+        symbol: 'NVDA', 
+        strategy: 'Bull Call Spread', 
+        entry: '880/900', 
+        risk: 2.5, 
+        reward: 7.5, 
+        confidence: 85,
+        reason: 'Strong gamma wall support at 880, bullish flow detected'
+      },
+      { 
+        symbol: 'SPY', 
+        strategy: 'Iron Condor', 
+        entry: '435/440/445/450', 
+        risk: 1.8, 
+        reward: 3.2, 
+        confidence: 78,
+        reason: 'Pinned between gamma walls, low IV environment'
+      },
+      { 
+        symbol: 'GME', 
+        strategy: 'Put Credit Spread', 
+        entry: '20/22.5', 
+        risk: 2.5, 
+        reward: 1.5, 
+        confidence: 72,
+        reason: 'High IV rank, support at 20 strike'
+      },
+    ]
+    setAiIdeas(ideas)
+  }
+
+  const showStrategyResults = (strategyId: string) => {
+    const stocks = stockDatabase[strategyId] || []
+    const scanner = scanners.find(s => s.id === strategyId)
+    
+    let resultText = `📊 ${scanner?.title} Results\n\n`
+    resultText += `Found ${stocks.length} stocks:\n\n`
+    
+    stocks.forEach((stock, idx) => {
+      resultText += `${idx + 1}. ${stock.symbol}\n`
+      resultText += `   Price: $${stock.price.toFixed(2)} (${stock.change > 0 ? '+' : ''}${stock.change}%)\n`
+      resultText += `   Volume: ${(stock.volume / 1000000).toFixed(1)}M\n`
+      resultText += `   Gamma: ${stock.gamma.toFixed(2)} | IV: ${stock.iv.toFixed(2)}\n`
+      resultText += `   Score: ${stock.score}/100\n\n`
+    })
+    
+    alert(resultText)
+  }
+
+  const showAIIdeas = () => {
+    generateAIIdeas()
+    let aiText = '🤖 AI Trade Ideas\n\n'
+    
+    aiIdeas.forEach((idea, idx) => {
+      aiText += `${idx + 1}. ${idea.symbol} - ${idea.strategy}\n`
+      aiText += `   Entry: ${idea.entry}\n`
+      aiText += `   Risk: $${idea.risk}k | Reward: $${idea.reward}k\n`
+      aiText += `   R:R Ratio: 1:${(idea.reward/idea.risk).toFixed(1)}\n`
+      aiText += `   Confidence: ${idea.confidence}%\n`
+      aiText += `   ${idea.reason}\n\n`
+    })
+    
+    alert(aiText)
   }
 
   return (
@@ -118,9 +225,18 @@ export default function Home() {
           </div>
           <div className="flex items-center space-x-4 text-sm">
             <div className="flex items-center space-x-2">
-              <span className={`w-2 h-2 rounded-full ${isScanning ? 'bg-yellow-500 animate-pulse' : isOnline ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></span>
+              <span className={`w-2 h-2 rounded-full ${
+                isScanning ? 'bg-yellow-500 animate-pulse' : 
+                marketStatus === 'open' ? 'bg-green-500' : 
+                marketStatus === 'pre-market' || marketStatus === 'after-hours' ? 'bg-yellow-500' :
+                'bg-red-500'
+              }`}></span>
               <span className="text-gray-400">
-                {isScanning ? 'Scanning...' : isOnline ? 'Online' : 'Connecting...'}
+                {isScanning ? 'Scanning...' : 
+                 marketStatus === 'open' ? 'Market Open' :
+                 marketStatus === 'pre-market' ? 'Pre-Market' :
+                 marketStatus === 'after-hours' ? 'After Hours' :
+                 'Market Closed'}
               </span>
             </div>
             <div className="text-gray-400">
@@ -136,7 +252,6 @@ export default function Home() {
             onClick={() => {
               setMode('screener')
               setScanResults({})
-              alert('📋 Screener Mode Active\n\nFilter stocks by:\n• Market Cap\n• Volume\n• Price Change\n• Technical Indicators')
             }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'screener' 
@@ -153,7 +268,6 @@ export default function Home() {
             onClick={() => {
               setMode('scanner')
               setScanResults({})
-              alert('📡 Scanner Mode Active\n\nReal-time scanning for:\n• Unusual Options Activity\n• Gamma Exposure Levels\n• Dark Pool Flows\n• Short Interest Changes')
             }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'scanner' 
@@ -197,9 +311,7 @@ export default function Home() {
 
           <div className="flex gap-4">
             <button 
-              onClick={() => {
-                alert('🤖 AI Analysis Running...\n\nTop Ideas:\n• SPY: Bullish gamma wall at 440\n• NVDA: IV crush opportunity\n• TSLA: Short squeeze setup detected\n• AAPL: Unusual call flow detected\n• MSFT: Dark pool accumulation\n\nFull AI features coming soon!')
-              }}
+              onClick={showAIIdeas}
               className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg flex items-center space-x-2 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,7 +358,7 @@ export default function Home() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
-                    alert(`ℹ️ ${scanner.title}\n\n${scanner.desc}\n\nThis scanner looks for:\n• Specific technical patterns\n• Volume anomalies\n• Options flow signals\n• Risk/reward setups`)
+                    alert(`ℹ️ ${scanner.title}\n\n${scanner.desc}\n\nThis scanner analyzes:\n• Technical patterns\n• Volume anomalies\n• Options flow\n• Risk/reward setups`)
                   }}
                   className="text-gray-400 hover:text-white transition"
                 >
@@ -267,11 +379,7 @@ export default function Home() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
-                    alert(`📊 ${scanner.title} Results\n\nTop ${scanResults[scanner.id]} Stocks:\n${
-                      ['AAPL - Score: 95', 'MSFT - Score: 92', 'NVDA - Score: 89', 'GOOGL - Score: 87', 'TSLA - Score: 85']
-                        .slice(0, Math.min(5, scanResults[scanner.id]))
-                        .join('\n')
-                    }\n\nFull analysis and charts coming soon!`)
+                    showStrategyResults(scanner.id)
                   }}
                   className="mt-3 text-sm text-purple-400 hover:text-purple-300 transition"
                 >
