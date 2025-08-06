@@ -484,16 +484,6 @@ const scannerStrategies = [
               <PlayCircle className="w-5 h-5" />
               Scan All Strategies
             </button>
-{mode === 'scanner' && (
-  <div className="flex gap-3">
-    <button
-      onClick={runAllScans}
-      disabled={stockData.length === 0}
-      className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-    >
-      <PlayCircle className="w-5 h-5" />
-      Scan All Strategies
-    </button>
     
     {/* Add quality filter info */}
     <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
