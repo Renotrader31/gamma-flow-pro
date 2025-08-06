@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Search, Filter, TrendingUp, TrendingDown, 
   Activity, BarChart3, Zap, Clock,
