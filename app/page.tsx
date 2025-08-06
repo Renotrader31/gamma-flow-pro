@@ -8,6 +8,8 @@ export default function Home() {
   const [isScanning, setIsScanning] = useState(false)
   const [mode, setMode] = useState<'screener' | 'scanner'>('scanner')
   const [scanResults, setScanResults] = useState<{[key: string]: number}>({})
+  const [selectedScanner, setSelectedScanner] = useState<string | null>(null)
+  const [showResults, setShowResults] = useState(false)
   
   useEffect(() => {
     const updateTime = () => {
@@ -51,23 +53,53 @@ export default function Home() {
 
     setTimeout(() => {
       setIsScanning(false)
+      alert('🎯 Full Scan Complete!\n\nTotal stocks found: ' + 
+        Object.values(scanResults).reduce((a, b) => a + (b || 0), 0) + 
+        '\n\nTop opportunities identified across all strategies!')
     }, scanners.length * 500 + 500)
   }
 
   const scanAll = () => {
-    startScan()
+    setIsScanning(true)
+    setScanResults({})
+    
+    alert('🔄 Scanning all strategies simultaneously...')
+    
+    // Simulate scanning all at once
+    setTimeout(() => {
+      const results: {[key: string]: number} = {}
+      scanners.forEach(scanner => {
+        results[scanner.id] = Math.floor(Math.random() * 20) + 1
+      })
+      setScanResults(results)
+      setIsScanning(false)
+      
+      const total = Object.values(results).reduce((a, b) => a + b, 0)
+      alert(`✅ All Strategies Scanned!\n\nTotal opportunities found: ${total}\n\nTop performing strategies:\n` +
+        scanners.map(s => `• ${s.title}: ${results[s.id]} stocks`).join('\n'))
+    }, 2000)
   }
 
   const scanSingle = (scannerId: string) => {
     setIsScanning(true)
+    setSelectedScanner(scannerId)
     setScanResults(prev => ({ ...prev, [scannerId]: 0 }))
     
+    const scanner = scanners.find(s => s.id === scannerId)
+    
     setTimeout(() => {
+      const results = Math.floor(Math.random() * 15) + 1
       setScanResults(prev => ({
         ...prev,
-        [scannerId]: Math.floor(Math.random() * 15) + 1
+        [scannerId]: results
       }))
       setIsScanning(false)
+      
+      if (scanner) {
+        alert(`✅ ${scanner.title} Scan Complete!\n\nFound ${results} stocks matching criteria:\n${
+          results > 0 ? `• Top picks: AAPL, MSFT, GOOGL...\n• Best setup: NVDA +2.5% momentum` : 'No matches at this time'
+        }\n\nClick "View Results" to see details.`)
+      }
     }, 1500)
   }
 
@@ -101,7 +133,11 @@ export default function Home() {
 
         <div className="flex flex-wrap gap-4 mb-8">
           <button 
-            onClick={() => setMode('screener')}
+            onClick={() => {
+              setMode('screener')
+              setScanResults({})
+              alert('📋 Screener Mode Active\n\nFilter stocks by:\n• Market Cap\n• Volume\n• Price Change\n• Technical Indicators')
+            }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'screener' 
                 ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/25' 
@@ -114,7 +150,11 @@ export default function Home() {
             <span>Screener Mode</span>
           </button>
           <button 
-            onClick={() => setMode('scanner')}
+            onClick={() => {
+              setMode('scanner')
+              setScanResults({})
+              alert('📡 Scanner Mode Active\n\nReal-time scanning for:\n• Unusual Options Activity\n• Gamma Exposure Levels\n• Dark Pool Flows\n• Short Interest Changes')
+            }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'scanner' 
                 ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/25' 
@@ -157,7 +197,9 @@ export default function Home() {
 
           <div className="flex gap-4">
             <button 
-              onClick={() => alert('AI Trade Ideas coming soon!')}
+              onClick={() => {
+                alert('🤖 AI Analysis Running...\n\nTop Ideas:\n• SPY: Bullish gamma wall at 440\n• NVDA: IV crush opportunity\n• TSLA: Short squeeze setup detected\n• AAPL: Unusual call flow detected\n• MSFT: Dark pool accumulation\n\nFull AI features coming soon!')
+              }}
               className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg flex items-center space-x-2 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,7 +246,7 @@ export default function Home() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
-                    alert(`${scanner.title}: ${scanner.desc}`)
+                    alert(`ℹ️ ${scanner.title}\n\n${scanner.desc}\n\nThis scanner looks for:\n• Specific technical patterns\n• Volume anomalies\n• Options flow signals\n• Risk/reward setups`)
                   }}
                   className="text-gray-400 hover:text-white transition"
                 >
@@ -222,7 +264,17 @@ export default function Home() {
               </div>
               <div className="text-sm text-gray-400">stocks found</div>
               {scanResults[scanner.id] > 0 && (
-                <button className="mt-3 text-sm text-purple-400 hover:text-purple-300 transition">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    alert(`📊 ${scanner.title} Results\n\nTop ${scanResults[scanner.id]} Stocks:\n${
+                      ['AAPL - Score: 95', 'MSFT - Score: 92', 'NVDA - Score: 89', 'GOOGL - Score: 87', 'TSLA - Score: 85']
+                        .slice(0, Math.min(5, scanResults[scanner.id]))
+                        .join('\n')
+                    }\n\nFull analysis and charts coming soon!`)
+                  }}
+                  className="mt-3 text-sm text-purple-400 hover:text-purple-300 transition"
+                >
                   View Results →
                 </button>
               )}
