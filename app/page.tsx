@@ -9,7 +9,7 @@ export default function Home() {
   const [mode, setMode] = useState<'screener' | 'scanner'>('scanner')
   const [scanResults, setScanResults] = useState<{[key: string]: number}>({})
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null)
-  const [showResults, setShowResults] = useState(false)
+  const [selectedStock, setSelectedStock] = useState<any>(null)
   const [marketStatus, setMarketStatus] = useState('closed')
   const [aiIdeas, setAiIdeas] = useState<any[]>([])
   const [showAI, setShowAI] = useState(false)
@@ -17,40 +17,47 @@ export default function Home() {
   // Mock real-time stock data
   const stockDatabase: {[key: string]: any[]} = {
     movers: [
-      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, score: 95 },
-      { symbol: 'TSLA', price: 242.15, change: 8.3, volume: 38000000, gamma: 0.75, iv: 0.52, score: 92 },
-      { symbol: 'AMD', price: 142.30, change: 6.8, volume: 28000000, gamma: 0.68, iv: 0.48, score: 89 },
-      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, score: 87 },
-      { symbol: 'META', price: 485.20, change: 5.1, volume: 18000000, gamma: 0.62, iv: 0.38, score: 85 },
+      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, gex: 2850000, dex: -1200000, score: 95 },
+      { symbol: 'TSLA', price: 242.15, change: 8.3, volume: 38000000, gamma: 0.75, iv: 0.52, gex: 1950000, dex: -890000, score: 92 },
+      { symbol: 'AMD', price: 142.30, change: 6.8, volume: 28000000, gamma: 0.68, iv: 0.48, gex: 1450000, dex: -650000, score: 89 },
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, gex: 3200000, dex: -1500000, score: 87 },
+      { symbol: 'META', price: 485.20, change: 5.1, volume: 18000000, gamma: 0.62, iv: 0.38, gex: 1850000, dex: -920000, score: 85 },
     ],
     volume: [
-      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, iv: 0.18, score: 98 },
-      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, iv: 0.22, score: 94 },
-      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, score: 91 },
-      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, score: 88 },
-      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, score: 85 },
+      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, iv: 0.18, gex: 8500000, dex: -4200000, score: 98 },
+      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, iv: 0.22, gex: 5200000, dex: -2800000, score: 94 },
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, gex: 3200000, dex: -1500000, score: 91 },
+      { symbol: 'NVDA', price: 875.32, change: 12.5, volume: 45000000, gamma: 0.82, iv: 0.45, gex: 2850000, dex: -1200000, score: 88 },
+      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, gex: 2100000, dex: -980000, score: 85 },
     ],
     caps: [
-      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, marketCap: 3000, score: 96 },
-      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, marketCap: 2900, score: 94 },
-      { symbol: 'GOOGL', price: 138.45, change: 1.8, volume: 28000000, gamma: 0.48, iv: 0.32, marketCap: 1800, score: 92 },
-      { symbol: 'AMZN', price: 178.20, change: 2.5, volume: 35000000, gamma: 0.55, iv: 0.35, marketCap: 1700, score: 90 },
+      { symbol: 'AAPL', price: 195.82, change: 3.2, volume: 52000000, gamma: 0.45, iv: 0.28, gex: 3200000, dex: -1500000, marketCap: 3000, score: 96 },
+      { symbol: 'MSFT', price: 412.30, change: 2.1, volume: 22000000, gamma: 0.52, iv: 0.25, gex: 2100000, dex: -980000, marketCap: 2900, score: 94 },
+      { symbol: 'GOOGL', price: 138.45, change: 1.8, volume: 28000000, gamma: 0.48, iv: 0.32, gex: 1800000, dex: -850000, marketCap: 1800, score: 92 },
+      { symbol: 'AMZN', price: 178.20, change: 2.5, volume: 35000000, gamma: 0.55, iv: 0.35, gex: 2300000, dex: -1100000, marketCap: 1700, score: 90 },
     ],
     iv: [
-      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, gamma: 0.35, iv: 1.25, score: 98 },
-      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, gamma: 0.28, iv: 1.15, score: 95 },
-      { symbol: 'RIVN', price: 12.30, change: 1.5, volume: 15000000, gamma: 0.42, iv: 0.95, score: 88 },
+      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, gamma: 0.35, iv: 1.25, gex: 450000, dex: -280000, score: 98 },
+      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, gamma: 0.28, iv: 1.15, gex: 320000, dex: -180000, score: 95 },
+      { symbol: 'RIVN', price: 12.30, change: 1.5, volume: 15000000, gamma: 0.42, iv: 0.95, gex: 580000, dex: -320000, score: 88 },
     ],
     gamma: [
-      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, pin: 440, score: 99 },
-      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, pin: 365, score: 97 },
-      { symbol: 'IWM', price: 198.30, change: 1.5, volume: 32000000, gamma: 0.78, pin: 200, score: 94 },
+      { symbol: 'SPY', price: 438.50, change: 0.8, volume: 95000000, gamma: 0.92, iv: 0.18, gex: 8500000, dex: -4200000, pin: 440, score: 99 },
+      { symbol: 'QQQ', price: 365.20, change: 1.2, volume: 48000000, gamma: 0.88, iv: 0.22, gex: 5200000, dex: -2800000, pin: 365, score: 97 },
+      { symbol: 'IWM', price: 198.30, change: 1.5, volume: 32000000, gamma: 0.78, iv: 0.25, gex: 2800000, dex: -1400000, pin: 200, score: 94 },
     ],
     squeeze: [
-      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, si: 45.2, daysToC: 2.5, score: 97 },
-      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, si: 38.5, daysToC: 1.8, score: 94 },
-      { symbol: 'BYND', price: 6.75, change: 2.1, volume: 3500000, si: 35.8, daysToC: 3.2, score: 90 },
+      { symbol: 'GME', price: 22.45, change: -2.3, volume: 8000000, gamma: 0.35, iv: 1.25, gex: 450000, si: 45.2, daysToC: 2.5, score: 97 },
+      { symbol: 'AMC', price: 4.82, change: -1.8, volume: 12000000, gamma: 0.28, iv: 1.15, gex: 320000, si: 38.5, daysToC: 1.8, score: 94 },
+      { symbol: 'BYND', price: 6.75, change: 2.1, volume: 3500000, gamma: 0.32, iv: 0.88, gex: 280000, si: 35.8, daysToC: 3.2, score: 90 },
     ]
+  }
+
+  const gammaLevels: {[key: string]: any} = {
+    'SPY': { strikes: [435, 438, 440, 442, 445], gex: [1200000, 2800000, 8500000, 2400000, 1800000] },
+    'QQQ': { strikes: [360, 363, 365, 367, 370], gex: [800000, 1600000, 5200000, 1400000, 900000] },
+    'NVDA': { strikes: [860, 870, 875, 880, 890], gex: [450000, 780000, 2850000, 920000, 560000] },
+    'TSLA': { strikes: [235, 240, 242, 245, 250], gex: [320000, 680000, 1950000, 720000, 480000] },
   }
   
   useEffect(() => {
@@ -99,6 +106,7 @@ export default function Home() {
   const startScan = () => {
     setIsScanning(true)
     setScanResults({})
+    setSelectedStrategy(null)
     
     scanners.forEach((scanner, index) => {
       setTimeout(() => {
@@ -111,13 +119,13 @@ export default function Home() {
 
     setTimeout(() => {
       setIsScanning(false)
-      generateAIIdeas()
     }, scanners.length * 300 + 500)
   }
 
   const scanAll = () => {
     setIsScanning(true)
     setScanResults({})
+    setSelectedStrategy(null)
     
     setTimeout(() => {
       const results: {[key: string]: number} = {}
@@ -126,7 +134,6 @@ export default function Home() {
       })
       setScanResults(results)
       setIsScanning(false)
-      generateAIIdeas()
     }, 1500)
   }
 
@@ -140,74 +147,68 @@ export default function Home() {
         [scannerId]: stockDatabase[scannerId]?.length || 0
       }))
       setIsScanning(false)
+      setSelectedStrategy(scannerId)
     }, 1000)
   }
 
-  const generateAIIdeas = () => {
-    const ideas = [
-      { 
-        symbol: 'NVDA', 
-        strategy: 'Bull Call Spread', 
-        entry: '880/900', 
-        risk: 2.5, 
-        reward: 7.5, 
+  const generateAIIdeas = (symbol: string) => {
+    const stock = Object.values(stockDatabase).flat().find(s => s.symbol === symbol)
+    if (!stock) return []
+    
+    const ideas = []
+    
+    if (stock.gamma > 0.7) {
+      ideas.push({
+        strategy: 'Bull Call Spread',
+        entry: `${Math.floor(stock.price)}//${Math.floor(stock.price * 1.05)}`,
+        risk: 2.5,
+        reward: 7.5,
         confidence: 85,
-        reason: 'Strong gamma wall support at 880, bullish flow detected'
-      },
-      { 
-        symbol: 'SPY', 
-        strategy: 'Iron Condor', 
-        entry: '435/440/445/450', 
-        risk: 1.8, 
-        reward: 3.2, 
-        confidence: 78,
-        reason: 'Pinned between gamma walls, low IV environment'
-      },
-      { 
-        symbol: 'GME', 
-        strategy: 'Put Credit Spread', 
-        entry: '20/22.5', 
-        risk: 2.5, 
-        reward: 1.5, 
+        reason: 'High gamma exposure indicates strong directional momentum'
+      })
+    }
+    
+    if (stock.iv > 0.8) {
+      ideas.push({
+        strategy: 'Iron Condor',
+        entry: `${Math.floor(stock.price * 0.95)}/${Math.floor(stock.price * 0.98)}/${Math.floor(stock.price * 1.02)}/${Math.floor(stock.price * 1.05)}`,
+        risk: 2.0,
+        reward: 3.0,
         confidence: 72,
-        reason: 'High IV rank, support at 20 strike'
-      },
-    ]
-    setAiIdeas(ideas)
+        reason: 'Elevated IV creates premium selling opportunity'
+      })
+    }
+    
+    if (stock.gex && stock.gex > 1000000) {
+      ideas.push({
+        strategy: 'Put Credit Spread',
+        entry: `${Math.floor(stock.price * 0.95)}/${Math.floor(stock.price * 0.93)}`,
+        risk: 2.0,
+        reward: 1.0,
+        confidence: 78,
+        reason: 'Gamma wall provides support level'
+      })
+    }
+    
+    return ideas
   }
 
-  const showStrategyResults = (strategyId: string) => {
-    const stocks = stockDatabase[strategyId] || []
-    const scanner = scanners.find(s => s.id === strategyId)
+  const showGammaLevels = (symbol: string) => {
+    const levels = gammaLevels[symbol]
+    if (!levels) {
+      setSelectedStock({ 
+        symbol, 
+        message: 'Gamma levels data coming soon for this symbol' 
+      })
+      return
+    }
     
-    let resultText = `📊 ${scanner?.title} Results\n\n`
-    resultText += `Found ${stocks.length} stocks:\n\n`
-    
-    stocks.forEach((stock, idx) => {
-      resultText += `${idx + 1}. ${stock.symbol}\n`
-      resultText += `   Price: $${stock.price.toFixed(2)} (${stock.change > 0 ? '+' : ''}${stock.change}%)\n`
-      resultText += `   Volume: ${(stock.volume / 1000000).toFixed(1)}M\n`
-      resultText += `   Gamma: ${stock.gamma.toFixed(2)} | IV: ${stock.iv.toFixed(2)}\n`
-      resultText += `   Score: ${stock.score}/100\n\n`
+    setSelectedStock({
+      symbol,
+      gammaData: levels,
+      currentPrice: stockDatabase.gamma?.find(s => s.symbol === symbol)?.price || 
+                    stockDatabase.movers?.find(s => s.symbol === symbol)?.price
     })
-    
-    alert(resultText)
-  }
-
-  const showAIIdeas = () => {
-    generateAIIdeas()
-    let aiText = '🤖 AI Trade Ideas\n\n'
-    
-    aiIdeas.forEach((idea, idx) => {
-      aiText += `${idx + 1}. ${idea.symbol} - ${idea.strategy}\n`
-      aiText += `   Entry: ${idea.entry}\n`
-      aiText += `   Risk: $${idea.risk}k | Reward: $${idea.reward}k\n`
-      aiText += `   R:R Ratio: 1:${(idea.reward/idea.risk).toFixed(1)}\n`
-      aiText += `   Confidence: ${idea.confidence}%\n`
-      aiText += `   ${idea.reason}\n\n`
-    })
-    
-    alert(aiText)
   }
 
   return (
@@ -252,6 +253,7 @@ export default function Home() {
             onClick={() => {
               setMode('screener')
               setScanResults({})
+              setSelectedStrategy(null)
             }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'screener' 
@@ -268,6 +270,7 @@ export default function Home() {
             onClick={() => {
               setMode('scanner')
               setScanResults({})
+              setSelectedStrategy(null)
             }}
             className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition ${
               mode === 'scanner' 
@@ -311,7 +314,7 @@ export default function Home() {
 
           <div className="flex gap-4">
             <button 
-              onClick={showAIIdeas}
+              onClick={() => setShowAI(!showAI)}
               className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg flex items-center space-x-2 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -358,7 +361,6 @@ export default function Home() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
-                    alert(`ℹ️ ${scanner.title}\n\n${scanner.desc}\n\nThis scanner analyzes:\n• Technical patterns\n• Volume anomalies\n• Options flow\n• Risk/reward setups`)
                   }}
                   className="text-gray-400 hover:text-white transition"
                 >
@@ -379,7 +381,7 @@ export default function Home() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation()
-                    showStrategyResults(scanner.id)
+                    setSelectedStrategy(scanner.id)
                   }}
                   className="mt-3 text-sm text-purple-400 hover:text-purple-300 transition"
                 >
@@ -389,6 +391,152 @@ export default function Home() {
             </div>
           ))}
         </div>
+
+        {/* Results Table */}
+        {selectedStrategy && (
+          <div className="mt-8 bg-[#1A1A2E]/80 backdrop-blur-lg border border-purple-500/20 rounded-xl p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">
+                {scanners.find(s => s.id === selectedStrategy)?.title} Results
+              </h3>
+              <button 
+                onClick={() => setSelectedStrategy(null)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-700">
+                    <th className="text-left py-2">Symbol</th>
+                    <th className="text-right py-2">Price</th>
+                    <th className="text-right py-2">Change %</th>
+                    <th className="text-right py-2">Volume</th>
+                    <th className="text-right py-2">Gamma</th>
+                    <th className="text-right py-2">IV</th>
+                    <th className="text-right py-2 cursor-pointer hover:text-purple-400" title="Click for gamma levels">GEX</th>
+                    <th className="text-right py-2">Score</th>
+                    <th className="text-center py-2">AI Ideas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockDatabase[selectedStrategy]?.map((stock, idx) => (
+                    <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800/50">
+                      <td className="py-3 font-semibold">{stock.symbol}</td>
+                      <td className="text-right">${stock.price.toFixed(2)}</td>
+                      <td className={`text-right ${stock.change > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {stock.change > 0 ? '+' : ''}{stock.change}%
+                      </td>
+                      <td className="text-right">{(stock.volume / 1000000).toFixed(1)}M</td>
+                      <td className="text-right">{stock.gamma.toFixed(2)}</td>
+                      <td className="text-right">{stock.iv.toFixed(2)}</td>
+                      <td 
+                        className="text-right cursor-pointer hover:text-purple-400"
+                        onClick={() => showGammaLevels(stock.symbol)}
+                      >
+                        {stock.gex ? (stock.gex / 1000000).toFixed(1) + 'M' : '-'}
+                      </td>
+                      <td className="text-right">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          stock.score >= 90 ? 'bg-green-500/20 text-green-400' :
+                          stock.score >= 85 ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          {stock.score}
+                        </span>
+                      </td>
+                      <td className="text-center">
+                        <button 
+                          onClick={() => {
+                            const ideas = generateAIIdeas(stock.symbol)
+                            setAiIdeas(ideas)
+                            setSelectedStock({ ...stock, aiIdeas: ideas })
+                          }}
+                          className="text-purple-400 hover:text-purple-300 text-xs"
+                        >
+                          View →
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Gamma Levels Display */}
+        {selectedStock?.gammaData && (
+          <div className="mt-4 bg-[#1A1A2E]/80 backdrop-blur-lg border border-green-500/20 rounded-xl p-6">
+            <h4 className="text-lg font-bold mb-4">
+              {selectedStock.symbol} Gamma Levels (Current: ${selectedStock.currentPrice?.toFixed(2)})
+            </h4>
+            <div className="grid grid-cols-5 gap-4">
+              {selectedStock.gammaData.strikes.map((strike: number, idx: number) => (
+                <div 
+                  key={idx} 
+                  className={`text-center p-3 rounded-lg ${
+                    Math.abs(strike - selectedStock.currentPrice) < 2 
+                      ? 'bg-purple-500/20 border border-purple-500' 
+                      : 'bg-gray-800/50'
+                  }`}
+                >
+                  <div className="text-sm text-gray-400">Strike ${strike}</div>
+                  <div className="text-lg font-bold text-green-400">
+                    {(selectedStock.gammaData.gex[idx] / 1000000).toFixed(1)}M
+                  </div>
+                  <div className="text-xs text-gray-500">GEX</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI Trade Ideas for Selected Stock */}
+        {selectedStock?.aiIdeas && selectedStock.aiIdeas.length > 0 && (
+          <div className="mt-4 bg-[#1A1A2E]/80 backdrop-blur-lg border border-purple-500/20 rounded-xl p-6">
+            <h4 className="text-lg font-bold mb-4">
+              🤖 AI Trade Ideas for {selectedStock.symbol}
+            </h4>
+            <div className="space-y-3">
+              {selectedStock.aiIdeas.map((idea: any, idx: number) => (
+                <div key={idx} className="bg-gray-800/50 rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-semibold text-purple-400">{idea.strategy}</span>
+                      <div className="text-sm text-gray-400 mt-1">{idea.reason}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-green-400">{idea.confidence}%</div>
+                      <div className="text-xs text-gray-400">Confidence</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4 mt-3 text-sm">
+                    <div>
+                      <span className="text-gray-400">Entry:</span>
+                      <div className="font-semibold">{idea.entry}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Risk:</span>
+                      <div className="font-semibold text-red-400">${idea.risk}k</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Reward:</span>
+                      <div className="font-semibold text-green-400">${idea.reward}k</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">R:R:</span>
+                      <div className="font-semibold">1:{(idea.reward/idea.risk).toFixed(1)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
