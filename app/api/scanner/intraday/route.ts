@@ -98,22 +98,17 @@ export async function GET(request: Request) {
             timestamp: new Date()
           })
         }
-
-      } catch (error) {
-        console.error(`Error scanning ${symbol}:`, error)
-        continue
       }
-    }
 
-    // Sort by score descending
-    results.sort((a, b) => b.score - a.score)
+      // Sort by score descending
+      results.sort((a, b) => b.score - a.score)
 
-    return NextResponse.json({
-      mode: 'intraday',
-      results,
-      scannedCount: intradayTickers.length,
-      timestamp: new Date().toISOString()
-    })
+      return NextResponse.json({
+        mode: 'intraday',
+        results,
+        scannedCount: intradayTickers.length,
+        timestamp: new Date().toISOString()
+      })
 
     } catch (fetchError) {
       console.error('Error fetching stock data:', fetchError)
