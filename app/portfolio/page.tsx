@@ -202,6 +202,30 @@ export default function PortfolioPage() {
 
           <div className="flex gap-3">
             <button
+              onClick={() => {
+                if (confirm('Delete ALL trades? This cannot be undone!')) {
+                  const data = loadPortfolioData()
+                  data.trades = []
+                  data.portfolios.forEach(p => {
+                    p.totalPL = 0
+                    p.totalRealizedPL = 0
+                    p.totalUnrealizedPL = 0
+                    p.openPositions = 0
+                    p.closedPositions = 0
+                    p.winRate = 0
+                    p.avgWin = 0
+                    p.avgLoss = 0
+                  })
+                  savePortfolioData(data)
+                  refreshData()
+                }
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-2 transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear All Trades
+            </button>
+            <button
               onClick={() => setShowAddPortfolio(true)}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 transition-all"
             >
