@@ -38,16 +38,15 @@ const getRiskColor = (confidence: number) => {
 // AI Trade Ideas Component (inline)
 const AITradeIdeasSection = ({ stock }: { stock: any }) => {
   const [ideas, setIdeas] = useState<any[]>([])
-  
-  useEffect(() => {
-    if (stock) {
-      generateIdeasForStock(stock)
-    }
-  }, [stock])
-  
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [refreshing, setRefreshing] = useState(false)
+
   const generateIdeasForStock = (stockData: any) => {
+    setRefreshing(true)
     const newIdeas = []
-    
+
+    // 1. Bullish Flow - Long Call Spread
     if (stockData.flowScore > 80) {
       newIdeas.push({
         type: 'Long Call Spread',
@@ -57,23 +56,27 @@ const AITradeIdeasSection = ({ stock }: { stock: any }) => {
         timeframe: '2-3 weeks',
         maxProfit: Math.round(stockData.price * 0.06 * 100),
         maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'High options flow detected with bullish sentiment'
+        reasoning: 'High options flow detected with bullish sentiment',
+        tags: ['bullish', 'flow_play']
       })
     }
-    
+
+    // 2. High IV - Iron Condor
     if (stockData.ivRank > 70) {
       newIdeas.push({
         type: 'Iron Condor',
         confidence: Math.min(85, stockData.ivRank),
         entry: `${Math.round(stockData.price * 0.95)}P/${Math.round(stockData.price * 0.97)}P - ${Math.round(stockData.price * 1.03)}C/${Math.round(stockData.price * 1.05)}C`,
         riskReward: '1:2.5',
-        timeframe: '30 days',
+        timeframe: '3-4 weeks',
         maxProfit: Math.round(stockData.price * 0.015 * 100),
         maxLoss: Math.round(stockData.price * 0.006 * 100),
-        reasoning: 'Elevated IV creates premium selling opportunity'
+        reasoning: 'Elevated IV creates premium selling opportunity',
+        tags: ['theta_play', 'neutral']
       })
     }
-    
+
+    // 3. Bullish Setup - Bull Put Spread
     if (stockData.putCallRatio < 0.7 && stockData.netPremium > 0) {
       newIdeas.push({
         type: 'Bull Put Spread',
@@ -83,21 +86,119 @@ const AITradeIdeasSection = ({ stock }: { stock: any }) => {
         timeframe: '2 weeks',
         maxProfit: Math.round(stockData.price * 0.01 * 100),
         maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'Bullish flow with support at key levels'
+        reasoning: 'Bullish flow with support at key levels',
+        tags: ['bullish', 'income']
       })
     }
-    
+
+    // 4. Bearish Setup - Bear Put Spread
+    if (stockData.putCallRatio > 1.3 || (stockData.changePercent && stockData.changePercent < -2)) {
+      newIdeas.push({
+        type: 'Bear Put Spread',
+        confidence: Math.min(85, 70 + Math.abs(stockData.changePercent || 0) * 3),
+        entry: `Buy ${Math.round(stockData.price * 0.95)}P / Sell ${Math.round(stockData.price * 0.90)}P`,
+        riskReward: '1:2.8',
+        timeframe: '1-2 weeks',
+        maxProfit: Math.round(stockData.price * 0.05 * 100),
+        maxLoss: Math.round(stockData.price * 0.015 * 100),
+        reasoning: 'Bearish momentum or high put/call ratio detected',
+        tags: ['bearish', 'protective']
+      })
+    }
+
+    // 5. Volatility Play - Long Strangle
+    if (stockData.ivRank > 60 && stockData.volume > 5000000) {
+      newIdeas.push({
+        type: 'Long Strangle',
+        confidence: Math.min(82, 65 + stockData.ivRank / 5),
+        entry: `Buy ${Math.round(stockData.price * 1.08)}C + Buy ${Math.round(stockData.price * 0.92)}P`,
+        riskReward: '1:4',
+        timeframe: '1-2 weeks',
+        maxProfit: 'Unlimited',
+        maxLoss: Math.round(stockData.price * 0.03 * 100),
+        reasoning: 'High volatility with large expected move',
+        tags: ['volatility_play', 'big_move']
+      })
+    }
+
+    // 6. Income Play - Covered Call
+    if (stockData.ivRank > 50 && stockData.ivRank < 75 && stockData.changePercent > -1) {
+      newIdeas.push({
+        type: 'Covered Call',
+        confidence: Math.min(85, 72 + stockData.ivRank / 6),
+        entry: `Own 100 shares + Sell ${Math.round(stockData.price * 1.05)}C`,
+        riskReward: '1:1.8',
+        timeframe: '4-5 weeks',
+        maxProfit: Math.round(stockData.price * 0.07 * 100),
+        maxLoss: 'Stock decline risk',
+        reasoning: 'Moderate IV suitable for premium collection',
+        tags: ['income', 'conservative']
+      })
+    }
+
     setIdeas(newIdeas)
+    setLastUpdate(new Date())
+    setRefreshing(false)
   }
+
+  useEffect(() => {
+    if (stock) {
+      generateIdeasForStock(stock)
+    }
+  }, [stock])
+
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    if (!autoRefresh || !stock) return
+
+    const interval = setInterval(() => {
+      generateIdeasForStock(stock)
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, stock])
   
   if (!stock || ideas.length === 0) return null
-  
+
   return (
     <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
-      <h4 className="text-lg font-bold mb-3 flex items-center gap-2">
-        <Sparkles className="w-5 h-5 text-purple-400" />
-        AI Trade Ideas for {stock.symbol}
-      </h4>
+      <div className="flex justify-between items-center mb-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-purple-400" />
+          <h4 className="text-lg font-bold">AI Trade Ideas for {stock.symbol}</h4>
+          {refreshing && (
+            <div className="flex items-center gap-1 text-xs text-blue-400">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <Clock className="w-3 h-3" />
+            <span>{lastUpdate.toLocaleTimeString()}</span>
+          </div>
+          <button
+            onClick={() => generateIdeasForStock(stock)}
+            className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-all"
+            title="Refresh now"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-all flex items-center gap-1 ${
+              autoRefresh
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+            title={autoRefresh ? 'Auto-refresh enabled (10s)' : 'Auto-refresh disabled'}
+          >
+            <Radio className={`w-3 h-3 ${autoRefresh ? 'animate-pulse' : ''}`} />
+            <span>{autoRefresh ? 'Live' : 'Paused'}</span>
+          </button>
+        </div>
+      </div>
       <div className="space-y-3">
         {ideas.map((idea, idx) => (
           <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
@@ -118,11 +219,11 @@ const AITradeIdeasSection = ({ stock }: { stock: any }) => {
               </div>
               <div>
                 <span className="text-gray-500">Max Profit</span>
-                <div className="font-medium text-green-400">${idea.maxProfit}</div>
+                <div className="font-medium text-green-400">{typeof idea.maxProfit === 'string' ? idea.maxProfit : `$${idea.maxProfit}`}</div>
               </div>
               <div>
                 <span className="text-gray-500">Max Loss</span>
-                <div className="font-medium text-red-400">${idea.maxLoss}</div>
+                <div className="font-medium text-red-400">{typeof idea.maxLoss === 'string' ? idea.maxLoss : `$${idea.maxLoss}`}</div>
               </div>
               <div>
                 <span className="text-gray-500">Reason</span>
