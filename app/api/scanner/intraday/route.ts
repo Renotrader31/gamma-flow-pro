@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Intraday scanner focuses on high-frequency moves, GEX, and 0-2 DTE options
     // Target: SPY, QQQ, IWM, and other high-gamma stocks
@@ -9,14 +9,28 @@ export async function GET() {
 
     const results = []
 
-    for (const symbol of intradayTickers) {
-      try {
-        // Fetch real-time data from your existing stocks API
-        const stockResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/stocks`, {
-          cache: 'no-store'
-        })
-        const stockData = await stockResponse.json()
+    // Get the base URL from the request
+    const baseUrl = new URL(request.url).origin
 
+    try {
+      // Fetch real-time data from your existing stocks API
+      const stockResponse = await fetch(`${baseUrl}/api/stocks`, {
+        cache: 'no-store'
+      })
+      const stockData = await stockResponse.json()
+
+      if (!stockData.data || stockData.data.length === 0) {
+        // Return mock data if no real data available (market closed)
+        return NextResponse.json({
+          mode: 'intraday',
+          results: generateMockIntradayResults(),
+          scannedCount: intradayTickers.length,
+          timestamp: new Date().toISOString(),
+          note: 'Using demo data - market may be closed'
+        })
+      }
+
+      for (const symbol of intradayTickers) {
         const stock = stockData.data?.find((s: any) => s.symbol === symbol)
         if (!stock) continue
 
@@ -101,11 +115,110 @@ export async function GET() {
       timestamp: new Date().toISOString()
     })
 
+    } catch (fetchError) {
+      console.error('Error fetching stock data:', fetchError)
+      // Return mock data on error
+      return NextResponse.json({
+        mode: 'intraday',
+        results: generateMockIntradayResults(),
+        scannedCount: 10,
+        timestamp: new Date().toISOString(),
+        note: 'Using demo data - API unavailable'
+      })
+    }
+
   } catch (error) {
     console.error('Intraday scan error:', error)
     return NextResponse.json({
-      error: 'Intraday scan failed',
-      results: []
-    }, { status: 500 })
+      mode: 'intraday',
+      results: generateMockIntradayResults(),
+      scannedCount: 10,
+      timestamp: new Date().toISOString(),
+      note: 'Using demo data - error occurred'
+    })
   }
+}
+
+// Generate mock data for when market is closed or API fails
+function generateMockIntradayResults() {
+  return [
+    {
+      symbol: 'SPY',
+      company: 'SPDR S&P 500 ETF',
+      price: 478.25,
+      change: 3.82,
+      changePercent: 0.81,
+      volume: 85420000,
+      score: 88,
+      signals: ['High Volume', 'Big Mover', 'Extreme Flow', 'Bullish'],
+      reasoning: 'Intraday scalp opportunity with High Volume, Big Mover, Extreme Flow, Bullish',
+      mode: 'intraday',
+      timestamp: new Date()
+    },
+    {
+      symbol: 'QQQ',
+      company: 'Invesco QQQ Trust',
+      price: 412.50,
+      change: 4.20,
+      changePercent: 1.03,
+      volume: 52300000,
+      score: 85,
+      signals: ['Above Avg Volume', 'Big Mover', 'Strong Flow', 'Bullish'],
+      reasoning: 'Intraday scalp opportunity with Above Avg Volume, Big Mover, Strong Flow, Bullish',
+      mode: 'intraday',
+      timestamp: new Date()
+    },
+    {
+      symbol: 'NVDA',
+      company: 'NVIDIA Corporation',
+      price: 875.50,
+      change: 18.75,
+      changePercent: 2.19,
+      volume: 42100000,
+      score: 92,
+      signals: ['High Volume', 'Big Mover', 'Extreme Flow', 'GEX Wall Nearby', 'Bullish'],
+      reasoning: 'Intraday scalp opportunity with High Volume, Big Mover, Extreme Flow, GEX Wall Nearby, Bullish',
+      mode: 'intraday',
+      timestamp: new Date()
+    },
+    {
+      symbol: 'TSLA',
+      company: 'Tesla Inc',
+      price: 242.80,
+      change: -4.15,
+      changePercent: -1.68,
+      volume: 98500000,
+      score: 82,
+      signals: ['High Volume', 'Big Mover', 'Strong Flow', 'Bearish'],
+      reasoning: 'Intraday scalp opportunity with High Volume, Big Mover, Strong Flow, Bearish',
+      mode: 'intraday',
+      timestamp: new Date()
+    },
+    {
+      symbol: 'AMD',
+      company: 'Advanced Micro Devices',
+      price: 178.45,
+      change: 2.90,
+      changePercent: 1.65,
+      volume: 35200000,
+      score: 78,
+      signals: ['Above Avg Volume', 'Big Mover', 'GEX Wall Nearby', 'Bullish'],
+      reasoning: 'Intraday scalp opportunity with Above Avg Volume, Big Mover, GEX Wall Nearby, Bullish',
+      mode: 'intraday',
+      timestamp: new Date()
+    },
+    {
+      symbol: 'AAPL',
+      company: 'Apple Inc',
+      price: 195.25,
+      change: -1.05,
+      changePercent: -0.54,
+      volume: 52800000,
+      score: 72,
+      signals: ['Above Avg Volume', 'Active', 'Strong Flow', 'Bearish'],
+      reasoning: 'Intraday scalp opportunity with Above Avg Volume, Active, Strong Flow, Bearish',
+      mode: 'intraday',
+      timestamp: new Date()
+    }
+  ]
 }
