@@ -250,7 +250,7 @@ export default function Home() {
     }
 
     fetchRealData()
-    const interval = setInterval(fetchRealData, 30000)
+    const interval = setInterval(fetchRealData, 10000) // Update every 10 seconds for more real-time data
     return () => clearInterval(interval)
   }, [])
   
