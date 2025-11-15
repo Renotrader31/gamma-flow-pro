@@ -27,8 +27,29 @@ export async function GET(request: Request) {
     // Get the base URL from the request
     const baseUrl = new URL(request.url).origin
 
-    // Mock Congress trading data (in production, this would come from real API)
-    const congressActivity = getMockCongressActivity()
+    // Fetch real Congress trading data
+    let congressActivity: any = {}
+    let congressDataStatus = 'demo'
+    try {
+      const congressResponse = await fetch(`${baseUrl}/api/congress-trades`, {
+        cache: 'no-store'
+      })
+      const congressData = await congressResponse.json()
+
+      congressDataStatus = congressData.status
+      congressActivity = congressData.data
+
+      if (congressData.status === 'live') {
+        console.log(`✅ Using LIVE Congress data - ${Object.keys(congressActivity).length} tickers tracked`)
+      } else {
+        console.log(`📊 Using demo Congress data`)
+      }
+    } catch (error) {
+      console.error('Error fetching Congress data:', error)
+      // Fallback to demo data
+      congressActivity = getMockCongressActivity()
+      congressDataStatus = 'demo'
+    }
 
     try {
       // Fetch stock data
@@ -169,7 +190,10 @@ export async function GET(request: Request) {
         results,
         scannedCount: longtermTickers.length,
         congressTracked: Object.keys(congressActivity).length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        note: congressDataStatus === 'live'
+          ? '✅ Using LIVE Congress trading data from Unusual Whales!'
+          : '📊 Using demo Congress data - add UNUSUAL_WHALES_KEY for live data'
       })
 
     } catch (fetchError) {

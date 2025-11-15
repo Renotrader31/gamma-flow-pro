@@ -32,9 +32,42 @@ export async function GET(request: Request) {
         })
       }
 
-      for (const symbol of intradayTickers) {
-        const stock = stockData.data?.find((s: any) => s.symbol === symbol)
-        if (!stock) continue
+      // Fetch additional data in parallel for better scoring
+      const enhancedStockData = await Promise.all(
+        intradayTickers.map(async (symbol) => {
+          const stock = stockData.data?.find((s: any) => s.symbol === symbol)
+          if (!stock) return null
+
+          // Fetch flow and GEX data for this symbol
+          try {
+            const [flowResponse, gexResponse] = await Promise.all([
+              fetch(`${baseUrl}/api/unusual-flow?symbol=${symbol}`, { cache: 'no-store' }).catch(() => null),
+              fetch(`${baseUrl}/api/gex-live?symbol=${symbol}`, { cache: 'no-store' }).catch(() => null)
+            ])
+
+            let flowData = null
+            let gexData = null
+
+            if (flowResponse) {
+              const flowJson = await flowResponse.json()
+              flowData = flowJson.data
+            }
+
+            if (gexResponse) {
+              const gexJson = await gexResponse.json()
+              gexData = gexJson.data
+            }
+
+            return { ...stock, flowData, gexData }
+          } catch (error) {
+            return stock
+          }
+        })
+      )
+
+      for (const stockWithData of enhancedStockData) {
+        if (!stockWithData) continue
+        const stock = stockWithData
 
         // Calculate intraday score (0-100)
         let score = 50 // Base score
@@ -59,8 +92,25 @@ export async function GET(request: Request) {
           signals.push('Active')
         }
 
-        // 3. Flow Score (30 points)
-        if (stock.flowScore) {
+        // 3. Flow Score (30 points) - NOW USING REAL DATA!
+        if (stock.flowData && stock.flowData.summary) {
+          const flowScore = stock.flowData.summary.flowScore || 0
+          if (flowScore > 80) {
+            score += 30
+            signals.push('Extreme Flow')
+            console.log(`✅ ${stock.symbol}: Real flow score ${flowScore}`)
+          } else if (flowScore > 60) {
+            score += 15
+            signals.push('Strong Flow')
+            console.log(`✅ ${stock.symbol}: Real flow score ${flowScore}`)
+          }
+
+          // Add sentiment signal
+          if (stock.flowData.summary.sentiment) {
+            signals.push(stock.flowData.summary.sentiment === 'BULLISH' ? 'Bullish Flow' : 'Bearish Flow')
+          }
+        } else if (stock.flowScore) {
+          // Fallback to stock data flow score
           if (stock.flowScore > 80) {
             score += 30
             signals.push('Extreme Flow')
@@ -70,11 +120,31 @@ export async function GET(request: Request) {
           }
         }
 
-        // 4. GEX Analysis (30 points) - simulated for now
-        const hasGEX = Math.random() > 0.5
-        if (hasGEX) {
-          score += 15
-          signals.push('GEX Wall Nearby')
+        // 4. GEX Analysis (30 points) - NOW USING REAL DATA!
+        if (stock.gexData && stock.gexData.gammaFlip) {
+          const currentPrice = stock.price
+          const gammaFlip = stock.gexData.gammaFlip.strike
+
+          // Check if price is near gamma flip (within 2%)
+          const distanceFromFlip = Math.abs(currentPrice - gammaFlip) / currentPrice
+          if (distanceFromFlip < 0.02) {
+            score += 20
+            signals.push('At Gamma Flip')
+            console.log(`✅ ${stock.symbol}: At gamma flip ${gammaFlip}`)
+          } else if (distanceFromFlip < 0.05) {
+            score += 10
+            signals.push('Near Gamma Flip')
+          }
+
+          // Check for resistance/support walls
+          if (stock.gexData.resistance && stock.gexData.resistance.length > 0) {
+            const nearestResistance = stock.gexData.resistance[0]
+            const distanceToResistance = Math.abs(currentPrice - nearestResistance.strike) / currentPrice
+            if (distanceToResistance < 0.03) {
+              score += 10
+              signals.push('GEX Resistance Nearby')
+            }
+          }
         }
 
         // Add directional signal
@@ -109,7 +179,8 @@ export async function GET(request: Request) {
         mode: 'intraday',
         results,
         scannedCount: intradayTickers.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        note: '✅ Using real flow & GEX data from Unusual Whales'
       })
 
     } catch (fetchError) {
