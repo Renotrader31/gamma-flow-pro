@@ -27,7 +27,7 @@ interface RealtimeData {
   timestamp: string;
 }
 
-export function useRealtimeData(endpoint: string, interval: number = 5000) {
+export function useRealtimeData(endpoint: string, interval: number = 2000) {
   const [data, setData] = useState<RealtimeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);

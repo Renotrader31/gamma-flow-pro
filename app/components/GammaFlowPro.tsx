@@ -36,17 +36,22 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
   const [loading, setLoading] = useState(true);
   const [searchSymbol, setSearchSymbol] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchTradeIdeas = async () => {
-      try {
-        const response = await fetch('/api/options-flow');
-        const data = await response.json();
-        if (data.tradeIdeas && data.tradeIdeas.length > 0) {
-          setTradeIdeas(data.tradeIdeas);
-        } else {
-          // Fallback data
-          setTradeIdeas([
+  const fetchTradeIdeas = async (showLoading = true) => {
+    try {
+      if (showLoading) setLoading(true);
+      else setRefreshing(true);
+
+      const response = await fetch('/api/options-flow');
+      const data = await response.json();
+      if (data.tradeIdeas && data.tradeIdeas.length > 0) {
+        setTradeIdeas(data.tradeIdeas);
+      } else {
+        // Fallback data
+        setTradeIdeas([
             {
               id: 1,
               symbol: 'NVDA',
@@ -132,11 +137,26 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
         ]);
       } finally {
         setLoading(false);
+        setRefreshing(false);
+        setLastUpdate(new Date());
       }
     };
-    
+
+  // Initial fetch on mount
+  useEffect(() => {
     fetchTradeIdeas();
   }, []);
+
+  // Auto-refresh every 10 seconds if enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      fetchTradeIdeas(false); // Don't show loading spinner for auto-refresh
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   const filteredIdeas = tradeIdeas.filter(idea => {
     if (filter === 'all') return true;
@@ -174,17 +194,18 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
   };
 
   const generateIdeasForSymbol = (symbol: string) => {
-    // Generate 2-4 trade ideas based on the symbol
+    // Generate 5-6 diverse trade ideas based on the symbol
     const ideas = [];
     const basePrice = 100; // You could fetch real price
-    
-    // Bullish idea
+    const timestamp = Date.now();
+
+    // 1. Bullish idea - Long Call Spread
     ideas.push({
-      id: 1,
+      id: timestamp + 1,
       symbol: symbol,
       type: 'Long Call Spread',
       confidence: 75 + Math.floor(Math.random() * 20),
-      riskReward: '1:3',
+      riskReward: '1:3.2',
       timeframe: '2-3 weeks',
       entry: {
         buy: `Buy ${Math.round(basePrice * 1.05)}C ${getExpiryDate(21)}`,
@@ -206,17 +227,17 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
       maxProfit: Math.round(basePrice * 0.05 * 100),
       maxLoss: Math.round(basePrice * 0.02 * 100),
       probability: 65,
-      tags: ['momentum', 'breakout']
+      tags: ['momentum', 'breakout', 'bullish']
     });
-    
-    // Neutral idea
+
+    // 2. Neutral idea - Iron Condor
     ideas.push({
-      id: 2,
+      id: timestamp + 2,
       symbol: symbol,
       type: 'Iron Condor',
       confidence: 70 + Math.floor(Math.random() * 15),
       riskReward: '1:2.5',
-      timeframe: '30 days',
+      timeframe: '3-4 weeks',
       entry: {
         sellCall: `Sell ${Math.round(basePrice * 1.10)}C ${getExpiryDate(30)}`,
         buyCall: `Buy ${Math.round(basePrice * 1.12)}C ${getExpiryDate(30)}`,
@@ -235,9 +256,123 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
       maxProfit: Math.round(basePrice * 0.015 * 100),
       maxLoss: Math.round(basePrice * 0.005 * 100),
       probability: 70,
-      tags: ['theta_play', 'premium_collection']
+      tags: ['theta_play', 'premium_collection', 'neutral']
     });
-    
+
+    // 3. Bearish idea - Bear Put Spread
+    ideas.push({
+      id: timestamp + 3,
+      symbol: symbol,
+      type: 'Bear Put Spread',
+      confidence: 68 + Math.floor(Math.random() * 18),
+      riskReward: '1:2.8',
+      timeframe: '1-2 weeks',
+      entry: {
+        buy: `Buy ${Math.round(basePrice * 0.95)}P ${getExpiryDate(14)}`,
+        sell: `Sell ${Math.round(basePrice * 0.90)}P ${getExpiryDate(14)}`,
+        netDebit: Math.round(basePrice * 0.015 * 100)
+      },
+      reasoning: [
+        'Bearish reversal pattern forming',
+        'Resistance at current levels',
+        'Unusual put activity detected',
+        'Overbought technical indicators'
+      ],
+      targets: [
+        (basePrice * 0.98).toFixed(2),
+        (basePrice * 0.95).toFixed(2),
+        (basePrice * 0.92).toFixed(2)
+      ],
+      stopLoss: (basePrice * 1.03).toFixed(2),
+      maxProfit: Math.round(basePrice * 0.05 * 100),
+      maxLoss: Math.round(basePrice * 0.015 * 100),
+      probability: 62,
+      tags: ['bearish', 'reversal', 'protective']
+    });
+
+    // 4. Volatility play - Long Strangle
+    ideas.push({
+      id: timestamp + 4,
+      symbol: symbol,
+      type: 'Long Strangle',
+      confidence: 72 + Math.floor(Math.random() * 12),
+      riskReward: '1:4',
+      timeframe: '1-2 weeks',
+      entry: {
+        buyCall: `Buy ${Math.round(basePrice * 1.08)}C ${getExpiryDate(14)}`,
+        buyPut: `Buy ${Math.round(basePrice * 0.92)}P ${getExpiryDate(14)}`,
+        netDebit: Math.round(basePrice * 0.03 * 100)
+      },
+      reasoning: [
+        'Large expected move anticipated',
+        'Upcoming catalyst event',
+        'High implied volatility',
+        'Significant options flow both sides'
+      ],
+      targets: [
+        `Above ${(basePrice * 1.12).toFixed(2)} or below ${(basePrice * 0.88).toFixed(2)}`
+      ],
+      stopLoss: `Between ${(basePrice * 0.96).toFixed(2)}-${(basePrice * 1.04).toFixed(2)}`,
+      maxProfit: 'Unlimited',
+      maxLoss: Math.round(basePrice * 0.03 * 100),
+      probability: 58,
+      tags: ['volatility_play', 'big_move', 'directional_neutral']
+    });
+
+    // 5. Income play - Covered Call
+    ideas.push({
+      id: timestamp + 5,
+      symbol: symbol,
+      type: 'Covered Call',
+      confidence: 78 + Math.floor(Math.random() * 10),
+      riskReward: '1:1.8',
+      timeframe: '4-5 weeks',
+      entry: {
+        ownShares: `Own 100 shares at ${basePrice.toFixed(2)}`,
+        sellCall: `Sell ${Math.round(basePrice * 1.05)}C ${getExpiryDate(35)}`,
+        netCredit: Math.round(basePrice * 0.02 * 100)
+      },
+      reasoning: [
+        'Moderate IV suitable for premium collection',
+        'Generate income on existing shares',
+        'Controlled upside with downside protection',
+        'Stock in consolidation phase'
+      ],
+      targets: [`Max profit at ${(basePrice * 1.05).toFixed(2)}`],
+      stopLoss: 'Protective puts or stock sale',
+      maxProfit: Math.round(basePrice * 0.07 * 100),
+      maxLoss: 'Stock decline risk',
+      probability: 73,
+      tags: ['income', 'conservative', 'theta_play']
+    });
+
+    // 6. Advanced play - Calendar Spread
+    ideas.push({
+      id: timestamp + 6,
+      symbol: symbol,
+      type: 'Calendar Spread',
+      confidence: 74 + Math.floor(Math.random() * 8),
+      riskReward: '1:2.2',
+      timeframe: '2-4 weeks',
+      entry: {
+        buyLong: `Buy ${Math.round(basePrice)}C ${getExpiryDate(45)}`,
+        sellShort: `Sell ${Math.round(basePrice)}C ${getExpiryDate(21)}`,
+        netDebit: Math.round(basePrice * 0.01 * 100)
+      },
+      reasoning: [
+        'Time decay advantage opportunity',
+        'Moderate volatility expected',
+        'Low risk defined strategy',
+        'Profit from volatility differential'
+      ],
+      targets: [`Max profit near ${basePrice.toFixed(2)} at near expiry`],
+      stopLoss: 'Large move in either direction',
+      maxProfit: Math.round(basePrice * 0.022 * 100),
+      maxLoss: Math.round(basePrice * 0.01 * 100),
+      probability: 66,
+      tags: ['theta_play', 'volatility_play', 'advanced']
+    });
+
     return ideas;
   };
 
@@ -257,16 +392,51 @@ const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
               <Sparkles className="w-6 h-6 text-purple-400" />
             </div>
             <div>
-              <h3 className="text-2xl font-bold">AI Trade Ideas</h3>
-              <p className="text-gray-400">Powered by advanced options flow analysis</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-2xl font-bold">AI Trade Ideas</h3>
+                {refreshing && (
+                  <div className="flex items-center gap-1 text-xs text-blue-400">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>Updating...</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <p className="text-gray-400">Powered by advanced options flow analysis</p>
+                <div className="flex items-center gap-1 text-gray-500">
+                  <Clock className="w-3 h-3" />
+                  <span>{lastUpdate.toLocaleTimeString()}</span>
+                </div>
+              </div>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fetchTradeIdeas(false)}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all"
+              title="Refresh now"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                autoRefresh
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+              title={autoRefresh ? 'Auto-refresh enabled (10s)' : 'Auto-refresh disabled'}
+            >
+              <Radio className={`w-4 h-4 ${autoRefresh ? 'animate-pulse' : ''}`} />
+              <span>{autoRefresh ? 'Live' : 'Paused'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Filters and Search */}
