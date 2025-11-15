@@ -1,10 +1,25 @@
 # Deployment Guide - Live Data Configuration
 
-## Problem Fixed
+## Updates in This Version
 
+### ✅ Live Data Integration (Fixed)
 The app was showing **live stock prices** from Polygon/FMP APIs, but **gamma exposure, options flow, and related metrics were randomly generated**.
 
 This has been fixed! The app now fetches **real gamma exposure data** from Polygon's options API.
+
+### ✅ Enhanced Scanner Strategies (New!)
+Expanded from 6 to **10 professional scanner strategies**:
+
+**New Scanners:**
+- 🏢 **Institutional Flow** - Tracks large premium flow (>$5M) indicating institutional activity
+- 💼 **Portfolio Defensive** - Blue-chip stocks ($50B+ market cap) for conservative portfolios
+- 🔄 **Reversal Setup** - Identifies potential reversals using P/C ratio extremes
+- 💰 **Penny Momentum** - Low-price stocks ($1-$10) with high momentum (5%+ moves)
+
+**Enhanced Scanners:**
+- 🐋 **Options Whale** - Massive options volume (50K+) with high gamma exposure
+- 🔥 **Top Movers** - Improved filtering for significant price movements
+- Plus: High Volume, IV Crush, Gamma Wall Pin, Short Squeeze
 
 ## How It Works Now
 
