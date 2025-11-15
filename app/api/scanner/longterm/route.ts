@@ -37,15 +37,17 @@ export async function GET(request: Request) {
       })
       const stockData = await stockResponse.json()
 
-      if (!stockData.data || stockData.data.length === 0) {
-        // Return mock data if no real data available (market closed)
+      // If we get very limited data (< 10 stocks), it's likely demo/default data
+      // In this case, show our comprehensive demo data instead
+      if (!stockData.data || stockData.data.length === 0 || stockData.data.length < 10) {
+        // Return mock data if no real data available (market closed or limited API data)
         return NextResponse.json({
           mode: 'longterm',
           results: generateMockLongtermResults(),
           scannedCount: longtermTickers.length,
           congressTracked: Object.keys(congressActivity).length,
           timestamp: new Date().toISOString(),
-          note: 'Using demo data - market may be closed'
+          note: 'Using demo data - market may be closed or limited API access'
         })
       }
 
