@@ -11,6 +11,8 @@ import {
   DollarSign, Percent, Hash, Timer,
   X, Brain, Briefcase, Building2, TrendingUpDown, Coins
 } from 'lucide-react'
+import { AITradeIdeas } from './components/AITradeIdeas'
+import { GEXDetailsModal } from './components/GEXDetailsModal'
 
 // Helper functions
 const formatNumber = (num: any) => {
@@ -29,170 +31,6 @@ const formatVolume = (num: any) => {
   return num.toString()
 }
 
-const getRiskColor = (confidence: number) => {
-  if (confidence >= 85) return 'text-green-400 bg-green-900/20'
-  if (confidence >= 70) return 'text-yellow-400 bg-yellow-900/20'
-  return 'text-red-400 bg-red-900/20'
-}
-
-// AI Trade Ideas Component (inline)
-const AITradeIdeasSection = ({ stock }: { stock: any }) => {
-  const [ideas, setIdeas] = useState<any[]>([])
-  
-  useEffect(() => {
-    if (stock) {
-      generateIdeasForStock(stock)
-    }
-  }, [stock])
-  
-  const generateIdeasForStock = (stockData: any) => {
-    const newIdeas = []
-    
-    if (stockData.flowScore > 80) {
-      newIdeas.push({
-        type: 'Long Call Spread',
-        confidence: Math.min(95, stockData.flowScore + 10),
-        entry: `Buy ${Math.round(stockData.price * 1.02)}C / Sell ${Math.round(stockData.price * 1.08)}C`,
-        riskReward: '1:3.5',
-        timeframe: '2-3 weeks',
-        maxProfit: Math.round(stockData.price * 0.06 * 100),
-        maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'High options flow detected with bullish sentiment'
-      })
-    }
-    
-    if (stockData.ivRank > 70) {
-      newIdeas.push({
-        type: 'Iron Condor',
-        confidence: Math.min(85, stockData.ivRank),
-        entry: `${Math.round(stockData.price * 0.95)}P/${Math.round(stockData.price * 0.97)}P - ${Math.round(stockData.price * 1.03)}C/${Math.round(stockData.price * 1.05)}C`,
-        riskReward: '1:2.5',
-        timeframe: '30 days',
-        maxProfit: Math.round(stockData.price * 0.015 * 100),
-        maxLoss: Math.round(stockData.price * 0.006 * 100),
-        reasoning: 'Elevated IV creates premium selling opportunity'
-      })
-    }
-    
-    if (stockData.putCallRatio < 0.7 && stockData.netPremium > 0) {
-      newIdeas.push({
-        type: 'Bull Put Spread',
-        confidence: 78,
-        entry: `Sell ${Math.round(stockData.price * 0.95)}P / Buy ${Math.round(stockData.price * 0.92)}P`,
-        riskReward: '1:1.5',
-        timeframe: '2 weeks',
-        maxProfit: Math.round(stockData.price * 0.01 * 100),
-        maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'Bullish flow with support at key levels'
-      })
-    }
-    
-    setIdeas(newIdeas)
-  }
-  
-  if (!stock || ideas.length === 0) return null
-  
-  return (
-    <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
-      <h4 className="text-lg font-bold mb-3 flex items-center gap-2">
-        <Sparkles className="w-5 h-5 text-purple-400" />
-        AI Trade Ideas for {stock.symbol}
-      </h4>
-      <div className="space-y-3">
-        {ideas.map((idea, idx) => (
-          <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <span className="font-semibold text-purple-400">{idea.type}</span>
-                <span className="ml-2 text-sm text-gray-400">• {idea.timeframe}</span>
-              </div>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${getRiskColor(idea.confidence)}`}>
-                {idea.confidence}% Confidence
-              </span>
-            </div>
-            <div className="text-sm text-gray-300 mb-2">{idea.entry}</div>
-            <div className="grid grid-cols-4 gap-2 text-xs">
-              <div>
-                <span className="text-gray-500">Risk/Reward</span>
-                <div className="font-medium">{idea.riskReward}</div>
-              </div>
-              <div>
-                <span className="text-gray-500">Max Profit</span>
-                <div className="font-medium text-green-400">${idea.maxProfit}</div>
-              </div>
-              <div>
-                <span className="text-gray-500">Max Loss</span>
-                <div className="font-medium text-red-400">${idea.maxLoss}</div>
-              </div>
-              <div>
-                <span className="text-gray-500">Reason</span>
-                <div className="font-medium text-purple-400" title={idea.reasoning}>View</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// GEX Details Component (inline)
-const GEXDetailsSection = ({ stock }: { stock: any }) => {
-  if (!stock || !stock.gammaLevels) return null
-  
-  return (
-    <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
-      <h4 className="text-lg font-bold mb-3 flex items-center gap-2">
-        <Activity className="w-5 h-5 text-green-400" />
-        Gamma Exposure Analysis - {stock.symbol}
-      </h4>
-      
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="bg-gray-900/50 p-3 rounded">
-          <div className="text-sm text-gray-400 mb-1">Total GEX</div>
-          <div className="text-2xl font-bold text-purple-400">{formatNumber(stock.gex)}</div>
-        </div>
-        <div className="bg-gray-900/50 p-3 rounded">
-          <div className="text-sm text-gray-400 mb-1">Gamma Flip Point</div>
-          <div className="text-2xl font-bold text-yellow-400">${stock.gammaLevels.flip}</div>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <h5 className="text-sm font-medium text-gray-400 mb-2">Resistance Levels</h5>
-          {stock.gammaLevels.resistance.map((level: number, i: number) => (
-            <div key={i} className="flex justify-between items-center py-1 px-2 hover:bg-gray-900/50 rounded">
-              <span className="text-red-400">R{i + 1}</span>
-              <span className="font-mono">${level}</span>
-            </div>
-          ))}
-        </div>
-        <div>
-          <h5 className="text-sm font-medium text-gray-400 mb-2">Support Levels</h5>
-          {stock.gammaLevels.support.map((level: number, i: number) => (
-            <div key={i} className="flex justify-between items-center py-1 px-2 hover:bg-gray-900/50 rounded">
-              <span className="text-green-400">S{i + 1}</span>
-              <span className="font-mono">${level}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      <div className="mt-3 p-2 bg-gray-900/50 rounded text-sm">
-        <p className="text-gray-300">
-          Price is {stock.price > stock.gammaLevels.flip ? 
-            <span className="text-red-400">above</span> : 
-            <span className="text-green-400">below</span>
-          } gamma flip. Market makers are {stock.price > stock.gammaLevels.flip ? 
-            <span className="text-red-400">short gamma (higher volatility)</span> : 
-            <span className="text-green-400">long gamma (lower volatility)</span>
-          }.
-        </p>
-      </div>
-    </div>
-  )
-}
 
 // Main Component
 export default function Home() {
@@ -204,8 +42,8 @@ export default function Home() {
   const [scanLoading, setScanLoading] = useState<{[key: string]: boolean}>({})
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null)
   const [selectedStock, setSelectedStock] = useState<any>(null)
-  const [showGEXDetails, setShowGEXDetails] = useState<string | null>(null)
-  const [showAIIdeas, setShowAIIdeas] = useState<string | null>(null)
+  const [showGEXDetails, setShowGEXDetails] = useState(false)
+  const [showAIIdeas, setShowAIIdeas] = useState(false)
   const [marketStatus, setMarketStatus] = useState('closed')
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -531,6 +369,14 @@ export default function Home() {
           {mode === 'scanner' && (
             <div className="flex gap-3">
               <button
+                onClick={() => setShowAIIdeas(true)}
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+              >
+                <Sparkles className="w-5 h-5" />
+                AI Trade Ideas
+              </button>
+
+              <button
                 onClick={runAllScans}
                 disabled={stockData.length === 0}
                 className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
@@ -538,7 +384,7 @@ export default function Home() {
                 <PlayCircle className="w-5 h-5" />
                 Scan All Strategies
               </button>
-              
+
               <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
                 <Shield className="w-4 h-4 text-green-400" />
                 <span>Quality Filter: Min $5 price, 1M+ volume</span>
@@ -650,7 +496,10 @@ export default function Home() {
                             <td className="p-3 text-right">{formatVolume(stock.volume)}</td>
                             <td className="p-3 text-right">
                               <button
-                                onClick={() => setShowGEXDetails(showGEXDetails === stock.symbol ? null : stock.symbol)}
+                                onClick={() => {
+                                  setSelectedStock(stock)
+                                  setShowGEXDetails(true)
+                                }}
                                 className="text-purple-400 hover:text-purple-300 font-medium"
                               >
                                 {formatNumber(stock.gex)}
@@ -686,28 +535,17 @@ export default function Home() {
                               </div>
                             </td>
                             <td className="p-3 text-center">
-                              <button 
-                                onClick={() => setShowAIIdeas(showAIIdeas === stock.symbol ? null : stock.symbol)}
+                              <button
+                                onClick={() => {
+                                  setSelectedStock(stock)
+                                  setShowAIIdeas(true)
+                                }}
                                 className="text-purple-400 hover:text-purple-300"
                               >
                                 <Sparkles className="w-4 h-4" />
                               </button>
                             </td>
                           </tr>
-                          {showGEXDetails === stock.symbol && (
-                            <tr>
-                              <td colSpan={10} className="p-0">
-                                <GEXDetailsSection stock={stock} />
-                              </td>
-                            </tr>
-                          )}
-                          {showAIIdeas === stock.symbol && (
-                            <tr>
-                              <td colSpan={10} className="p-0">
-                                <AITradeIdeasSection stock={stock} />
-                              </td>
-                            </tr>
-                          )}
                         </>
                       ))}
                     </tbody>
@@ -864,7 +702,10 @@ export default function Home() {
                             <td className="p-3 text-right">{formatNumber(stock.marketCap)}</td>
                             <td className="p-3 text-right">
                               <button
-                                onClick={() => setShowGEXDetails(showGEXDetails === stock.symbol ? null : stock.symbol)}
+                                onClick={() => {
+                                  setSelectedStock(stock)
+                                  setShowGEXDetails(true)
+                                }}
                                 className="text-purple-400 hover:text-purple-300 font-medium"
                               >
                                 {formatNumber(stock.gex)}
@@ -882,28 +723,17 @@ export default function Home() {
                               </div>
                             </td>
                             <td className="p-3 text-center">
-                              <button 
-                                onClick={() => setShowAIIdeas(showAIIdeas === stock.symbol ? null : stock.symbol)}
+                              <button
+                                onClick={() => {
+                                  setSelectedStock(stock)
+                                  setShowAIIdeas(true)
+                                }}
                                 className="text-purple-400 hover:text-purple-300"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
                             </td>
                           </tr>
-                          {showGEXDetails === stock.symbol && (
-                            <tr>
-                              <td colSpan={9} className="p-0">
-                                <GEXDetailsSection stock={stock} />
-                              </td>
-                            </tr>
-                          )}
-                          {showAIIdeas === stock.symbol && (
-                            <tr>
-                              <td colSpan={9} className="p-0">
-                                <AITradeIdeasSection stock={stock} />
-                              </td>
-                            </tr>
-                          )}
                         </>
                       ))}
                     </tbody>
@@ -914,6 +744,19 @@ export default function Home() {
           </>
         )}
       </div>
+
+      {/* Modals */}
+      {showGEXDetails && (
+        <GEXDetailsModal
+          stock={selectedStock}
+          onClose={() => setShowGEXDetails(false)}
+        />
+      )}
+      {showAIIdeas && (
+        <AITradeIdeas
+          onClose={() => setShowAIIdeas(false)}
+        />
+      )}
     </div>
   )
 }
