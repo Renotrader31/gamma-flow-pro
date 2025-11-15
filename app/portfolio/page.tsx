@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Briefcase, Plus, Upload, Download, TrendingUp, TrendingDown,
   DollarSign, Activity, PieChart, Filter, Search, X, Edit2,
   Trash2, Check, AlertCircle, BarChart3, Calendar, Target,
-  Percent, RefreshCw, Eye, EyeOff, ChevronDown, Settings
+  Percent, RefreshCw, Eye, EyeOff, ChevronDown, Settings, ArrowLeft
 } from 'lucide-react'
 import {
   loadPortfolioData,
@@ -22,6 +23,7 @@ import {
 import { Portfolio, Trade, TradeFormData } from '../lib/portfolio-types'
 
 export default function PortfolioPage() {
+  const router = useRouter()
   const [portfolios, setPortfolios] = useState<Portfolio[]>([])
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('all')
   const [trades, setTrades] = useState<Trade[]>([])
@@ -201,6 +203,13 @@ export default function PortfolioPage() {
           </div>
 
           <div className="flex gap-3">
+            <button
+              onClick={() => router.push('/')}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center gap-2 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Scanner
+            </button>
             <button
               onClick={() => {
                 if (confirm('Delete ALL trades? This cannot be undone!')) {
