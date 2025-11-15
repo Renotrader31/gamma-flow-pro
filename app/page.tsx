@@ -1,15 +1,15 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { 
-  Search, Filter, TrendingUp, TrendingDown, 
+import {
+  Search, Filter, TrendingUp, TrendingDown,
   Activity, BarChart3, Zap, Clock,
   ChevronUp, ChevronDown, ArrowUpRight, ArrowDownRight,
   Flame, Settings, Sparkles, Target, Users, Gauge,
   Radio, PlayCircle, RefreshCw, Download, Save,
   Eye, Moon, Shield, AlertTriangle, Layers,
   DollarSign, Percent, Hash, Timer,
-  X, Brain
+  X, Brain, Briefcase, Building2, TrendingUpDown, Coins
 } from 'lucide-react'
 
 // Helper functions
@@ -277,6 +277,30 @@ export default function Home() {
         .slice(0, 20)
     },
     {
+      id: 'institutionalFlow',
+      name: 'Institutional Flow',
+      description: 'Large premium flow indicating institutional activity',
+      icon: Building2,
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 15 && s.netPremium && Math.abs(s.netPremium) > 5000000 && s.optionVolume > 10000)
+        .sort((a, b) => Math.abs(b.netPremium || 0) - Math.abs(a.netPremium || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'portfolioDefensive',
+      name: 'Portfolio Defensive',
+      description: 'Conservative blue-chip stocks with options activity',
+      icon: Briefcase,
+      color: 'text-indigo-400',
+      bgColor: 'bg-indigo-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 50 && s.marketCap > 50000000000 && s.gex > 50000000 && Math.abs(s.changePercent) < 2)
+        .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
+        .slice(0, 20)
+    },
+    {
       id: 'darkPoolAccumulation',
       name: 'High Volume',
       description: 'Stocks with high trading volume',
@@ -290,14 +314,14 @@ export default function Home() {
     },
     {
       id: 'optionsWhale',
-      name: 'Large Caps',
-      description: 'Large market cap stocks',
+      name: 'Options Whale',
+      description: 'Massive options volume with high GEX',
       icon: Activity,
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 20 && s.marketCap && s.marketCap > 10000000000)
-        .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
+        .filter(s => s.price > 20 && s.optionVolume > 50000 && s.gex > 200000000)
+        .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
     {
@@ -334,6 +358,34 @@ export default function Home() {
       filter: (stocks: any[]) => stocks
         .filter(s => s.price > 10 && s.flowScore && s.flowScore > 75 && s.changePercent > 2)
         .sort((a, b) => (b.flowScore || 0) - (a.flowScore || 0))
+        .slice(0, 20)
+    },
+    {
+      id: 'reversalSetup',
+      name: 'Reversal Setup',
+      description: 'Stocks showing potential reversal patterns',
+      icon: TrendingUpDown,
+      color: 'text-pink-400',
+      bgColor: 'bg-pink-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => {
+          const isPutHeavy = s.putCallRatio > 1.5
+          const isCallHeavy = s.putCallRatio < 0.6
+          return s.price > 10 && (isPutHeavy || isCallHeavy) && s.volume > 2000000
+        })
+        .sort((a, b) => Math.abs((b.putCallRatio || 1) - 1) - Math.abs((a.putCallRatio || 1) - 1))
+        .slice(0, 20)
+    },
+    {
+      id: 'pennySqueeze',
+      name: 'Penny Momentum',
+      description: 'Low-price stocks with high momentum',
+      icon: Coins,
+      color: 'text-amber-400',
+      bgColor: 'bg-amber-900/20',
+      filter: (stocks: any[]) => stocks
+        .filter(s => s.price > 1 && s.price < 10 && s.changePercent > 5 && s.volume > 5000000)
+        .sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0))
         .slice(0, 20)
     }
   ]

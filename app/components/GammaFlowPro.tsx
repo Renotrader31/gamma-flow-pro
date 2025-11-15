@@ -1,15 +1,15 @@
 // @ts-nocheck
 'use client'
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, Filter, TrendingUp, TrendingDown, 
+import {
+  Search, Filter, TrendingUp, TrendingDown,
   Activity, BarChart3, Zap, Clock,
   ChevronUp, ChevronDown, ArrowUpRight, ArrowDownRight,
   Flame, Settings, Sparkles, Target, Users, Gauge,
   Radio, PlayCircle, RefreshCw, Download, Save,
   Eye, Moon, Shield, AlertTriangle, Layers,
   DollarSign, Percent, Hash, Timer,
-  X, Brain
+  X, Brain, Briefcase, Building2, TrendingUpDown, Coins
 } from 'lucide-react';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { RealtimeIndicator } from './RealtimeIndicator';
@@ -696,7 +696,33 @@ const GammaFlowPro = () => {
       color: 'text-orange-400',
       bgColor: 'bg-orange-900/20',
       filters: {
-        changePercent: { min: '1', max: '' },
+        changePercent: { min: '3', max: '' },
+        volume: { min: '1000000', max: '' },
+      }
+    },
+    {
+      id: 'institutionalFlow',
+      name: 'Institutional Flow',
+      description: 'Large premium flow indicating institutional activity',
+      icon: Building2,
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-900/20',
+      filters: {
+        price: { min: '15', max: '' },
+        optionVolume: { min: '10000', max: '' },
+      }
+    },
+    {
+      id: 'portfolioDefensive',
+      name: 'Portfolio Defensive',
+      description: 'Conservative blue-chip stocks with options activity',
+      icon: Briefcase,
+      color: 'text-indigo-400',
+      bgColor: 'bg-indigo-900/20',
+      filters: {
+        price: { min: '50', max: '' },
+        marketCap: { min: '50000000000', max: '' },
+        changePercent: { min: '-2', max: '2' },
       }
     },
     {
@@ -707,18 +733,20 @@ const GammaFlowPro = () => {
       color: 'text-purple-400',
       bgColor: 'bg-purple-900/20',
       filters: {
-        volume: { min: '10000000', max: '' },
+        volume: { min: '20000000', max: '' },
+        price: { min: '10', max: '' },
       }
     },
     {
       id: 'optionsWhale',
-      name: 'Large Caps',
-      description: 'Large market cap stocks',
+      name: 'Options Whale',
+      description: 'Massive options volume with high GEX',
       icon: Activity,
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filters: {
-        marketCap: { min: '1000000000', max: '' },
+        price: { min: '20', max: '' },
+        optionVolume: { min: '50000', max: '' },
       }
     },
     {
@@ -729,7 +757,8 @@ const GammaFlowPro = () => {
       color: 'text-red-400',
       bgColor: 'bg-red-900/20',
       filters: {
-        price: { min: '10', max: '' },
+        price: { min: '15', max: '' },
+        ivRank: { min: '70', max: '' },
       }
     },
     {
@@ -740,7 +769,8 @@ const GammaFlowPro = () => {
       color: 'text-green-400',
       bgColor: 'bg-green-900/20',
       filters: {
-        changePercent: { min: '-1', max: '1' },
+        price: { min: '20', max: '' },
+        gex: { min: '100000000', max: '' },
       }
     },
     {
@@ -751,7 +781,34 @@ const GammaFlowPro = () => {
       color: 'text-yellow-400',
       bgColor: 'bg-yellow-900/20',
       filters: {
-        changePercent: { min: '3', max: '' },
+        price: { min: '10', max: '' },
+        flowScore: { min: '75', max: '' },
+        changePercent: { min: '2', max: '' },
+      }
+    },
+    {
+      id: 'reversalSetup',
+      name: 'Reversal Setup',
+      description: 'Stocks showing potential reversal patterns',
+      icon: TrendingUpDown,
+      color: 'text-pink-400',
+      bgColor: 'bg-pink-900/20',
+      filters: {
+        price: { min: '10', max: '' },
+        volume: { min: '2000000', max: '' },
+      }
+    },
+    {
+      id: 'pennySqueeze',
+      name: 'Penny Momentum',
+      description: 'Low-price stocks with high momentum',
+      icon: Coins,
+      color: 'text-amber-400',
+      bgColor: 'bg-amber-900/20',
+      filters: {
+        price: { min: '1', max: '10' },
+        changePercent: { min: '5', max: '' },
+        volume: { min: '5000000', max: '' },
       }
     }
   ];
