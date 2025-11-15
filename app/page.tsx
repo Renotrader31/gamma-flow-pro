@@ -1,15 +1,15 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { 
-  Search, Filter, TrendingUp, TrendingDown, 
+import {
+  Search, Filter, TrendingUp, TrendingDown,
   Activity, BarChart3, Zap, Clock,
   ChevronUp, ChevronDown, ArrowUpRight, ArrowDownRight,
   Flame, Settings, Sparkles, Target, Users, Gauge,
   Radio, PlayCircle, RefreshCw, Download, Save,
   Eye, Moon, Shield, AlertTriangle, Layers,
   DollarSign, Percent, Hash, Timer,
-  X, Brain
+  X, Brain, Briefcase
 } from 'lucide-react'
 
 // Helper functions
@@ -540,8 +540,15 @@ export default function Home() {
               </h1>
               <p className="text-gray-400">Real-time gamma exposure, options flow, and dark pool analysis</p>
             </div>
-            <div className="text-right">
-              <div className="flex items-center gap-2 justify-end mb-1">
+            <div className="flex flex-col items-end gap-2">
+              <a
+                href="/portfolio"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-all flex items-center gap-2"
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>Portfolio Tracker</span>
+              </a>
+              <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></span>
                 <span className="text-sm text-gray-400">{dataStatus}</span>
               </div>
