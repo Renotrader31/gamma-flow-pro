@@ -47,23 +47,31 @@ export async function GET(request: Request) {
 
             let flowData = null
             let gexData = null
+            let flowStatus = 'demo'
+            let gexStatus = 'demo'
 
             if (flowResponse) {
               const flowJson = await flowResponse.json()
               flowData = flowJson.data
+              flowStatus = flowJson.status || 'demo'
             }
 
             if (gexResponse) {
               const gexJson = await gexResponse.json()
               gexData = gexJson.data
+              gexStatus = gexJson.status || 'demo'
             }
 
-            return { ...stock, flowData, gexData }
+            return { ...stock, flowData, gexData, flowStatus, gexStatus }
           } catch (error) {
             return stock
           }
         })
       )
+
+      // Check if we got any live data
+      const hasLiveFlow = enhancedStockData.some(s => s && s.flowStatus === 'live')
+      const hasLiveGEX = enhancedStockData.some(s => s && s.gexStatus === 'live')
 
       for (const stockWithData of enhancedStockData) {
         if (!stockWithData) continue
@@ -180,7 +188,11 @@ export async function GET(request: Request) {
         results,
         scannedCount: intradayTickers.length,
         timestamp: new Date().toISOString(),
-        note: '✅ Using real flow & GEX data from Unusual Whales'
+        note: (hasLiveFlow && hasLiveGEX)
+          ? '✅ Using LIVE flow & GEX data from Unusual Whales!'
+          : (hasLiveFlow || hasLiveGEX)
+          ? `⚠️ Partial live data (${hasLiveFlow ? 'Flow' : 'GEX'} live, ${!hasLiveFlow ? 'Flow' : 'GEX'} demo)`
+          : '📊 Using demo data - add UNUSUAL_WHALES_KEY for live data'
       })
 
     } catch (fetchError) {

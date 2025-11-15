@@ -53,23 +53,31 @@ export async function GET(request: Request) {
 
             let flowData = null
             let darkpoolData = null
+            let flowStatus = 'demo'
+            let darkpoolStatus = 'demo'
 
             if (flowResponse) {
               const flowJson = await flowResponse.json()
               flowData = flowJson.data
+              flowStatus = flowJson.status || 'demo'
             }
 
             if (darkpoolResponse) {
               const darkpoolJson = await darkpoolResponse.json()
               darkpoolData = darkpoolJson.data
+              darkpoolStatus = darkpoolJson.status || 'demo'
             }
 
-            return { ...stock, flowData, darkpoolData }
+            return { ...stock, flowData, darkpoolData, flowStatus, darkpoolStatus }
           } catch (error) {
             return stock
           }
         })
       )
+
+      // Check if we got any live data
+      const hasLiveFlow = enhancedStockData.some(s => s && s.flowStatus === 'live')
+      const hasLiveDarkpool = enhancedStockData.some(s => s && s.darkpoolStatus === 'live')
 
       for (const stockWithData of enhancedStockData) {
         try {
@@ -205,7 +213,11 @@ export async function GET(request: Request) {
         results,
         scannedCount: swingTickers.length,
         timestamp: new Date().toISOString(),
-        note: '✅ Using real flow & dark pool data from Unusual Whales'
+        note: (hasLiveFlow && hasLiveDarkpool)
+          ? '✅ Using LIVE flow & dark pool data from Unusual Whales!'
+          : (hasLiveFlow || hasLiveDarkpool)
+          ? `⚠️ Partial live data (${hasLiveFlow ? 'Flow' : 'Dark Pool'} live, ${!hasLiveFlow ? 'Flow' : 'Dark Pool'} demo)`
+          : '📊 Using demo data - add UNUSUAL_WHALES_KEY for live data'
       })
 
     } catch (fetchError) {
