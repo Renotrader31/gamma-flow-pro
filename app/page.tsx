@@ -35,68 +35,135 @@ const getRiskColor = (confidence: number) => {
   return 'text-red-400 bg-red-900/20'
 }
 
-// AI Trade Ideas Component (inline)
+// AI Trade Ideas Component (inline) - Enhanced with 6 strategies
 const AITradeIdeasSection = ({ stock }: { stock: any }) => {
   const [ideas, setIdeas] = useState<any[]>([])
-  
+
   useEffect(() => {
     if (stock) {
       generateIdeasForStock(stock)
     }
   }, [stock])
-  
+
   const generateIdeasForStock = (stockData: any) => {
     const newIdeas = []
-    
-    if (stockData.flowScore > 80) {
+    const now = Date.now()
+
+    // 1. Bullish Flow - Long Call Spread
+    if (stockData.flowScore > 60) {
       newIdeas.push({
+        id: now + 1,
         type: 'Long Call Spread',
-        confidence: Math.min(95, stockData.flowScore + 10),
+        confidence: Math.min(95, 70 + stockData.flowScore / 4),
         entry: `Buy ${Math.round(stockData.price * 1.02)}C / Sell ${Math.round(stockData.price * 1.08)}C`,
-        riskReward: '1:3.5',
+        riskReward: '1:3.2',
         timeframe: '2-3 weeks',
         maxProfit: Math.round(stockData.price * 0.06 * 100),
         maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'High options flow detected with bullish sentiment'
+        reasoning: 'Strong bullish flow detected with institutional call buying pressure'
       })
     }
-    
-    if (stockData.ivRank > 70) {
+
+    // 2. High IV - Iron Condor
+    if (stockData.ivRank > 60) {
       newIdeas.push({
+        id: now + 2,
         type: 'Iron Condor',
-        confidence: Math.min(85, stockData.ivRank),
+        confidence: Math.min(88, 75 + (stockData.ivRank - 60) / 2),
         entry: `${Math.round(stockData.price * 0.95)}P/${Math.round(stockData.price * 0.97)}P - ${Math.round(stockData.price * 1.03)}C/${Math.round(stockData.price * 1.05)}C`,
         riskReward: '1:2.5',
-        timeframe: '30 days',
+        timeframe: '3-4 weeks',
         maxProfit: Math.round(stockData.price * 0.015 * 100),
         maxLoss: Math.round(stockData.price * 0.006 * 100),
-        reasoning: 'Elevated IV creates premium selling opportunity'
+        reasoning: `High IV rank at ${stockData.ivRank}% - premium selling opportunity with expected volatility contraction`
       })
     }
-    
-    if (stockData.putCallRatio < 0.7 && stockData.netPremium > 0) {
+
+    // 3. Bearish Flow - Bear Put Spread
+    if (stockData.flowScore < 45 || stockData.putCallRatio > 1.2) {
       newIdeas.push({
+        id: now + 3,
+        type: 'Bear Put Spread',
+        confidence: Math.min(90, 68 + Math.abs(stockData.flowScore - 50)),
+        entry: `Buy ${Math.round(stockData.price * 0.97)}P / Sell ${Math.round(stockData.price * 0.92)}P`,
+        riskReward: '1:2.8',
+        timeframe: '1-2 weeks',
+        maxProfit: Math.round(stockData.price * 0.05 * 100),
+        maxLoss: Math.round(stockData.price * 0.018 * 100),
+        reasoning: 'Heavy bearish options flow detected - unusual put buying activity suggests downside hedge'
+      })
+    }
+
+    // 4. Volatility Play - Long Strangle
+    if (stockData.ivRank > 55 && Math.abs(stockData.netPremium) > 1000000) {
+      newIdeas.push({
+        id: now + 4,
+        type: 'Long Strangle',
+        confidence: Math.min(82, 65 + stockData.ivRank / 5),
+        entry: `Buy ${Math.round(stockData.price * 0.93)}P + Buy ${Math.round(stockData.price * 1.07)}C`,
+        riskReward: '1:4',
+        timeframe: '1-2 weeks',
+        maxProfit: Math.round(stockData.price * 0.15 * 100),
+        maxLoss: Math.round(stockData.price * 0.038 * 100),
+        reasoning: 'Large expected move anticipated - significant options premium flow suggests catalyst event'
+      })
+    }
+
+    // 5. Income Play - Covered Call
+    if (stockData.ivRank > 45 && stockData.ivRank < 75 && stockData.changePercent < 3) {
+      newIdeas.push({
+        id: now + 5,
+        type: 'Covered Call',
+        confidence: Math.min(85, 72 + stockData.ivRank / 6),
+        entry: `Own 100 shares + Sell ${Math.round(stockData.price * 1.05)}C`,
+        riskReward: '1:1.5',
+        timeframe: '4-5 weeks',
+        maxProfit: Math.round(stockData.price * 0.06 * 100),
+        maxLoss: Math.round(stockData.price * 0.04 * 100),
+        reasoning: 'Moderate IV suitable for premium collection - generate income on existing shares'
+      })
+    }
+
+    // 6. Advanced Play - Calendar Spread
+    if (stockData.flowScore > 40 && stockData.flowScore < 70) {
+      newIdeas.push({
+        id: now + 6,
+        type: 'Calendar Spread',
+        confidence: Math.min(78, 68 + stockData.flowScore / 8),
+        entry: `Sell ${Math.round(stockData.price * 1.00)}C (near) / Buy ${Math.round(stockData.price * 1.00)}C (far)`,
+        riskReward: '1:2.2',
+        timeframe: '2-4 weeks',
+        maxProfit: Math.round(stockData.price * 0.04 * 100),
+        maxLoss: Math.round(stockData.price * 0.018 * 100),
+        reasoning: 'Moderate flow activity - profit from time decay differential and volatility expansion'
+      })
+    }
+
+    // Ensure at least one fallback idea
+    if (newIdeas.length === 0) {
+      newIdeas.push({
+        id: now + 7,
         type: 'Bull Put Spread',
-        confidence: 78,
+        confidence: 72,
         entry: `Sell ${Math.round(stockData.price * 0.95)}P / Buy ${Math.round(stockData.price * 0.92)}P`,
         riskReward: '1:1.5',
         timeframe: '2 weeks',
         maxProfit: Math.round(stockData.price * 0.01 * 100),
         maxLoss: Math.round(stockData.price * 0.02 * 100),
-        reasoning: 'Bullish flow with support at key levels'
+        reasoning: 'Moderate bullish setup with technical support levels holding'
       })
     }
-    
+
     setIdeas(newIdeas)
   }
-  
+
   if (!stock || ideas.length === 0) return null
-  
+
   return (
     <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
       <h4 className="text-lg font-bold mb-3 flex items-center gap-2">
         <Sparkles className="w-5 h-5 text-purple-400" />
-        AI Trade Ideas for {stock.symbol}
+        AI Trade Ideas for {stock.symbol} ({ideas.length} strategies)
       </h4>
       <div className="space-y-3">
         {ideas.map((idea, idx) => (
