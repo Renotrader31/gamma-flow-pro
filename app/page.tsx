@@ -541,13 +541,22 @@ export default function Home() {
               <p className="text-gray-400">Real-time gamma exposure, options flow, and dark pool analysis</p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <a
-                href="/portfolio"
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-all flex items-center gap-2"
-              >
-                <Briefcase className="w-4 h-4" />
-                <span>Portfolio Tracker</span>
-              </a>
+              <div className="flex gap-2">
+                <a
+                  href="/scanner"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-all flex items-center gap-2"
+                >
+                  <Brain className="w-4 h-4" />
+                  <span>Institutional Scanner</span>
+                </a>
+                <a
+                  href="/portfolio"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-all flex items-center gap-2"
+                >
+                  <Briefcase className="w-4 h-4" />
+                  <span>Portfolio Tracker</span>
+                </a>
+              </div>
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></span>
                 <span className="text-sm text-gray-400">{dataStatus}</span>
