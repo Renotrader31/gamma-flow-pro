@@ -33,6 +33,7 @@ export default function ScannerHub() {
   const [lastScan, setLastScan] = useState<Date | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [filterScore, setFilterScore] = useState(70)
+  const [dataSourceNote, setDataSourceNote] = useState<string>('')
 
   // Auto-refresh intervals based on mode
   const refreshIntervals = {
@@ -66,6 +67,7 @@ export default function ScannerHub() {
       if (data.results) {
         setScanResults(data.results.filter((r: ScanResult) => r.score >= filterScore))
         setLastScan(new Date())
+        setDataSourceNote(data.note || '')
       }
     } catch (error) {
       console.error('Scan error:', error)
@@ -215,12 +217,23 @@ export default function ScannerHub() {
 
         {/* Current Mode Info */}
         <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-xl p-6 mb-8">
-          <div className="flex items-center gap-4 mb-4">
-            <ModeIcon className={`w-10 h-10 text-${currentMode.color}-400`} />
-            <div>
-              <h2 className="text-2xl font-bold">{currentMode.title} Mode</h2>
-              <p className="text-gray-400">{currentMode.description}</p>
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-4">
+              <ModeIcon className={`w-10 h-10 text-${currentMode.color}-400`} />
+              <div>
+                <h2 className="text-2xl font-bold">{currentMode.title} Mode</h2>
+                <p className="text-gray-400">{currentMode.description}</p>
+              </div>
             </div>
+            {dataSourceNote && (
+              <div className={`px-4 py-2 rounded-lg border text-sm font-medium ${
+                dataSourceNote.includes('LIVE') || dataSourceNote.includes('✅')
+                  ? 'bg-green-900/20 border-green-500/50 text-green-300'
+                  : 'bg-blue-900/20 border-blue-500/50 text-blue-300'
+              }`}>
+                {dataSourceNote}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-4">
