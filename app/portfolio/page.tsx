@@ -31,6 +31,9 @@ export default function PortfolioPage() {
   const [viewMode, setViewMode] = useState<'all' | 'open' | 'closed'>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null)
+  const [livePrices, setLivePrices] = useState<{[symbol: string]: number}>({})
+  const [pricesLoading, setPricesLoading] = useState(false)
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<Date>(new Date())
 
   // Load data on mount
   useEffect(() => {
@@ -47,6 +50,89 @@ export default function PortfolioPage() {
       setTrades(getTrades(selectedPortfolioId))
     }
   }
+
+  // Fetch real-time prices for open positions
+  const fetchLivePrices = async () => {
+    const openTrades = trades.filter(t => t.status === 'open')
+    if (openTrades.length === 0) return
+
+    const symbols = [...new Set(openTrades.map(t => t.symbol))]
+
+    try {
+      setPricesLoading(true)
+      const response = await fetch('/api/stocks')
+      const result = await response.json()
+
+      if (result.status === 'success' && result.data) {
+        const priceMap: {[symbol: string]: number} = {}
+
+        result.data.forEach((stock: any) => {
+          if (symbols.includes(stock.symbol)) {
+            priceMap[stock.symbol] = stock.price
+          }
+        })
+
+        setLivePrices(priceMap)
+        setLastPriceUpdate(new Date())
+
+        // Update trades with current prices and unrealized P&L
+        const data = loadPortfolioData()
+        let updated = false
+
+        data.trades.forEach(trade => {
+          if (trade.status === 'open' && priceMap[trade.symbol]) {
+            const currentPrice = priceMap[trade.symbol]
+            const priceDiff = currentPrice - trade.entryPrice
+            const unrealizedPL = priceDiff * trade.quantity
+
+            if (trade.currentPrice !== currentPrice || trade.unrealizedPL !== unrealizedPL) {
+              trade.currentPrice = currentPrice
+              trade.unrealizedPL = unrealizedPL
+              updated = true
+            }
+          }
+        })
+
+        if (updated) {
+          savePortfolioData(data)
+
+          // Recalculate portfolio stats
+          const portfolioIds = new Set(data.trades.map(t => t.portfolioId))
+          portfolioIds.forEach(id => {
+            const portfolio = data.portfolios.find(p => p.id === id)
+            if (portfolio) {
+              const portfolioTrades = data.trades.filter(t => t.portfolioId === id)
+              const totalUnrealizedPL = portfolioTrades
+                .filter(t => t.status === 'open')
+                .reduce((sum, t) => sum + (t.unrealizedPL || 0), 0)
+
+              portfolio.totalUnrealizedPL = totalUnrealizedPL
+              portfolio.totalPL = portfolio.totalRealizedPL + totalUnrealizedPL
+            }
+          })
+
+          savePortfolioData(data)
+          refreshData()
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching live prices:', error)
+    } finally {
+      setPricesLoading(false)
+    }
+  }
+
+  // Fetch prices on mount and every 10 seconds
+  useEffect(() => {
+    fetchLivePrices()
+    const interval = setInterval(fetchLivePrices, 10000) // Update every 10 seconds
+    return () => clearInterval(interval)
+  }, [trades.length])
+
+  // Also fetch when selected portfolio changes
+  useEffect(() => {
+    fetchLivePrices()
+  }, [selectedPortfolioId])
 
   // Update trades when portfolio selection changes
   useEffect(() => {
@@ -97,8 +183,21 @@ export default function PortfolioPage() {
             <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
               <Briefcase className="w-10 h-10 text-purple-400" />
               Portfolio Tracker
+              {pricesLoading && (
+                <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
+              )}
             </h1>
-            <p className="text-gray-400">Track your trades across multiple portfolios</p>
+            <div className="flex items-center gap-3">
+              <p className="text-gray-400">Track your trades across multiple portfolios</p>
+              {trades.filter(t => t.status === 'open').length > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-gray-500">
+                    Prices updated {lastPriceUpdate.toLocaleTimeString()}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -377,6 +476,7 @@ const TradesTable = ({ trades, onEdit, onDelete }: any) => {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Symbol</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Type</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Entry</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Current</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Exit</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Qty</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">P&L</th>
@@ -408,6 +508,26 @@ const TradesTable = ({ trades, onEdit, onDelete }: any) => {
                   <td className="px-4 py-3">
                     <div className="text-sm">${trade.entryPrice.toFixed(2)}</div>
                     <div className="text-xs text-gray-500">{new Date(trade.entryDate).toLocaleDateString()}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {trade.status === 'open' && trade.currentPrice ? (
+                      <>
+                        <div className={`text-sm font-medium ${
+                          trade.currentPrice > trade.entryPrice ? 'text-green-400' :
+                          trade.currentPrice < trade.entryPrice ? 'text-red-400' :
+                          'text-gray-300'
+                        }`}>
+                          ${trade.currentPrice.toFixed(2)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {((trade.currentPrice - trade.entryPrice) / trade.entryPrice * 100).toFixed(2)}%
+                        </div>
+                      </>
+                    ) : trade.status === 'open' ? (
+                      <span className="text-gray-500 text-sm">Loading...</span>
+                    ) : (
+                      <span className="text-gray-500 text-sm">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {trade.exitPrice ? (
