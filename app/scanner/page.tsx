@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Radio, PlayCircle, Settings, Activity, TrendingUp, TrendingDown,
-  Zap, Clock, Target, Eye, RefreshCw, Briefcase
+  Zap, Clock, Target, Eye, RefreshCw, Briefcase, Sparkles
 } from 'lucide-react';
+import { AITradeIdeas } from '../components/AITradeIdeas';
 
 type ScanMode = 'intraday' | 'swing' | 'longterm';
 
@@ -67,6 +68,8 @@ export default function InstitutionalScanner() {
   const [lastScan, setLastScan] = useState<Date>(new Date());
   const [countdown, setCountdown] = useState(60);
   const [stockData, setStockData] = useState<any[]>([]);
+  const [selectedStock, setSelectedStock] = useState<any>(null);
+  const [showAIIdeas, setShowAIIdeas] = useState(false);
 
   const config = modeConfigs[mode];
 
@@ -149,43 +152,121 @@ export default function InstitutionalScanner() {
       ];
       setResults(demoResults.filter(r => r.score >= minScore));
     } else {
-      // Calculate scores from real data
+      // Calculate scores from real data - mode-specific scoring
       const scoredResults = stockData
         .map(stock => {
           let score = 50;
           const signals: string[] = [];
 
-          // Volume scoring
-          if (stock.volume > 50000000) {
-            score += 15;
-            signals.push('High Volume');
-          } else if (stock.volume > 20000000) {
-            score += 10;
-            signals.push('Above Avg Volume');
-          }
+          if (mode === 'intraday') {
+            // Intraday Scalper: Focus on volume, volatility, and quick moves
+            if (stock.volume > 50000000) {
+              score += 20;
+              signals.push('High Volume');
+            } else if (stock.volume > 20000000) {
+              score += 10;
+              signals.push('Above Avg Volume');
+            }
 
-          // Price change scoring
-          if (Math.abs(stock.changePercent) > 2) {
-            score += 15;
-            signals.push('Big Mover');
-          } else if (Math.abs(stock.changePercent) > 1) {
-            score += 10;
-            signals.push('Active');
-          }
+            if (Math.abs(stock.changePercent) > 2) {
+              score += 20;
+              signals.push('Big Mover');
+            } else if (Math.abs(stock.changePercent) > 1) {
+              score += 12;
+              signals.push('Active');
+            }
 
-          // Options flow scoring
-          if (stock.flowScore > 80) {
-            score += 20;
-            signals.push('Extreme Flow');
-          } else if (stock.flowScore > 60) {
-            score += 15;
-            signals.push('Strong Flow');
-          }
+            if (stock.flowScore > 80) {
+              score += 15;
+              signals.push('Extreme Flow');
+            } else if (stock.flowScore > 60) {
+              score += 10;
+              signals.push('Strong Flow');
+            }
 
-          // GEX scoring
-          if (stock.gex > 200000000) {
-            score += 10;
-            signals.push('GEX Wall Nearby');
+            if (stock.gex > 200000000) {
+              score += 10;
+              signals.push('GEX Wall Nearby');
+            }
+
+            // Prefer liquid, high-volume stocks
+            if (stock.price > 100 && stock.volume > 30000000) {
+              score += 5;
+            }
+
+          } else if (mode === 'swing') {
+            // Swing Trading: Focus on moderate moves, consistent volume, trend strength
+            if (stock.volume > 30000000) {
+              score += 12;
+              signals.push('Consistent Volume');
+            } else if (stock.volume > 10000000) {
+              score += 8;
+              signals.push('Decent Volume');
+            }
+
+            // Moderate price changes (not too volatile)
+            if (Math.abs(stock.changePercent) > 1 && Math.abs(stock.changePercent) < 4) {
+              score += 18;
+              signals.push('Good Swing Setup');
+            } else if (Math.abs(stock.changePercent) > 0.5) {
+              score += 10;
+              signals.push('Moderate Move');
+            }
+
+            // Options activity
+            if (stock.optionVolume > 20000) {
+              score += 15;
+              signals.push('Active Options');
+            }
+
+            // IV Rank for spreads
+            if (stock.ivRank > 50 && stock.ivRank < 80) {
+              score += 12;
+              signals.push('Good IV for Spreads');
+            }
+
+            // Trend strength
+            if (stock.flowScore > 65 && stock.flowScore < 90) {
+              score += 10;
+              signals.push('Trend Following');
+            }
+
+          } else if (mode === 'longterm') {
+            // Long-term Investment: Focus on fundamentals, market cap, institutional activity
+            if (stock.marketCap > 50000000000) {
+              score += 20;
+              signals.push('Blue Chip');
+            } else if (stock.marketCap > 10000000000) {
+              score += 12;
+              signals.push('Large Cap');
+            }
+
+            // Prefer steady, not too volatile
+            if (Math.abs(stock.changePercent) < 2 && stock.volume > 5000000) {
+              score += 15;
+              signals.push('Stable Growth');
+            }
+
+            // Institutional flow (net premium)
+            if (stock.netPremium && Math.abs(stock.netPremium) > 10000000) {
+              score += 20;
+              signals.push('Institutional Flow');
+            } else if (stock.netPremium && Math.abs(stock.netPremium) > 3000000) {
+              score += 12;
+              signals.push('Smart Money');
+            }
+
+            // Options interest for covered calls
+            if (stock.optionVolume > 10000 && stock.price > 50) {
+              score += 10;
+              signals.push('Options Liquidity');
+            }
+
+            // Quality filter - price and market cap
+            if (stock.price > 30 && stock.marketCap > 5000000000) {
+              score += 8;
+              signals.push('Quality Stock');
+            }
           }
 
           return {
@@ -448,13 +529,16 @@ export default function InstitutionalScanner() {
                         </div>
                       </td>
                       <td className="p-3 text-center">
-                        <Link
-                          href="/"
+                        <button
+                          onClick={() => {
+                            setSelectedStock(result);
+                            setShowAIIdeas(true);
+                          }}
                           className="inline-flex items-center gap-1 px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded text-sm font-medium transition-all"
                         >
-                          <Eye className="w-3 h-3" />
+                          <Sparkles className="w-3 h-3" />
                           Analyze
-                        </Link>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -464,6 +548,14 @@ export default function InstitutionalScanner() {
           )}
         </div>
       </div>
+
+      {/* AI Trade Ideas Modal */}
+      {showAIIdeas && (
+        <AITradeIdeas
+          stock={selectedStock}
+          onClose={() => setShowAIIdeas(false)}
+        />
+      )}
     </div>
   );
 }
