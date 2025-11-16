@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Search, Filter, TrendingUp, TrendingDown,
   Activity, BarChart3, Zap, Clock,
@@ -13,7 +14,6 @@ import {
 } from 'lucide-react'
 import { AITradeIdeas } from './components/AITradeIdeas'
 import { GEXDetailsModal } from './components/GEXDetailsModal'
-import { PortfolioTracker } from './components/PortfolioTracker'
 
 // Helper functions
 const formatNumber = (num: any) => {
@@ -45,7 +45,6 @@ export default function Home() {
   const [selectedStock, setSelectedStock] = useState<any>(null)
   const [showGEXDetails, setShowGEXDetails] = useState(false)
   const [showAIIdeas, setShowAIIdeas] = useState(false)
-  const [showPortfolio, setShowPortfolio] = useState(false)
   const [marketStatus, setMarketStatus] = useState('closed')
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -395,13 +394,13 @@ export default function Home() {
               </>
             )}
 
-            <button
-              onClick={() => setShowPortfolio(true)}
+            <Link
+              href="/portfolio"
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
             >
               <Briefcase className="w-5 h-5" />
               Portfolio
-            </button>
+            </Link>
           </div>
         </div>
 
@@ -768,11 +767,6 @@ export default function Home() {
         <AITradeIdeas
           stock={selectedStock}
           onClose={() => setShowAIIdeas(false)}
-        />
-      )}
-      {showPortfolio && (
-        <PortfolioTracker
-          onClose={() => setShowPortfolio(false)}
         />
       )}
     </div>
