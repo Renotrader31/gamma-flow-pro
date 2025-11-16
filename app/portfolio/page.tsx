@@ -1,10 +1,11 @@
 'use client'
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, Trash2, TrendingUp, TrendingDown, Download, Upload,
-  Filter, Calendar, DollarSign, Percent, Target, Activity, Eye, Edit, X
+  Filter, Calendar, DollarSign, Percent, Target, Activity, Eye, Edit, X, FileUp
 } from 'lucide-react';
+import { parseCSV, ParsedTrade } from '@/lib/csv-parsers';
 
 interface OptionLeg {
   legId: string;
@@ -45,12 +46,14 @@ interface Trade {
   exitPremium?: number;
   status: 'open' | 'closed';
   notes?: string;
+  broker?: 'FIDELITY' | 'TDA' | 'WEDBUSH' | 'MANUAL';
 }
 
 interface Portfolio {
   id: string;
   name: string;
   createdAt: string;
+  broker?: 'FIDELITY' | 'TDA' | 'WEDBUSH' | 'ALL' | 'MANUAL';
 }
 
 interface StrategyTemplate {
@@ -230,6 +233,10 @@ export default function PortfolioPage() {
   });
 
   const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [showImportCSV, setShowImportCSV] = useState(false);
+  const [selectedBroker, setSelectedBroker] = useState<'FIDELITY' | 'TDA' | 'WEDBUSH'>('FIDELITY');
+  const [importStatus, setImportStatus] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load data from localStorage
   useEffect(() => {
@@ -237,21 +244,44 @@ export default function PortfolioPage() {
     const savedTrades = localStorage.getItem('gamma-flow-trades');
 
     if (savedPortfolios) {
-      setPortfolios(JSON.parse(savedPortfolios));
+      const parsed = JSON.parse(savedPortfolios);
+      // Ensure broker portfolios exist
+      const brokerPortfolios = ensureBrokerPortfolios(parsed);
+      setPortfolios(brokerPortfolios);
+      localStorage.setItem('gamma-flow-portfolios', JSON.stringify(brokerPortfolios));
     } else {
-      const defaultPortfolio: Portfolio = {
-        id: 'main',
-        name: 'Main Portfolio',
-        createdAt: new Date().toISOString()
-      };
-      setPortfolios([defaultPortfolio]);
-      localStorage.setItem('gamma-flow-portfolios', JSON.stringify([defaultPortfolio]));
+      const defaultPortfolios = createDefaultBrokerPortfolios();
+      setPortfolios(defaultPortfolios);
+      localStorage.setItem('gamma-flow-portfolios', JSON.stringify(defaultPortfolios));
     }
 
     if (savedTrades) {
       setTrades(JSON.parse(savedTrades));
     }
   }, []);
+
+  // Create default broker portfolios
+  const createDefaultBrokerPortfolios = (): Portfolio[] => {
+    const now = new Date().toISOString();
+    return [
+      { id: 'all', name: 'All Accounts', createdAt: now, broker: 'ALL' },
+      { id: 'fidelity', name: 'Fidelity', createdAt: now, broker: 'FIDELITY' },
+      { id: 'tda', name: 'Think or Swim', createdAt: now, broker: 'TDA' },
+      { id: 'wedbush', name: 'Wedbush', createdAt: now, broker: 'WEDBUSH' }
+    ];
+  };
+
+  // Ensure broker portfolios exist in the list
+  const ensureBrokerPortfolios = (existingPortfolios: Portfolio[]): Portfolio[] => {
+    const now = new Date().toISOString();
+    const brokerIds = ['all', 'fidelity', 'tda', 'wedbush'];
+    const existing = new Set(existingPortfolios.map(p => p.id));
+
+    const defaultBrokers = createDefaultBrokerPortfolios();
+    const missing = defaultBrokers.filter(p => !existing.has(p.id));
+
+    return [...missing, ...existingPortfolios];
+  };
 
   // Save trades to localStorage
   useEffect(() => {
@@ -341,12 +371,91 @@ export default function PortfolioPage() {
     const portfolio: Portfolio = {
       id: Date.now().toString(),
       name: newPortfolioName,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      broker: 'MANUAL'
     };
 
     setPortfolios([...portfolios, portfolio]);
     setNewPortfolioName('');
     setShowAddPortfolio(false);
+  };
+
+  // Handle CSV Import
+  const handleCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportStatus('Reading file...');
+
+    try {
+      const text = await file.text();
+      setImportStatus('Parsing trades...');
+
+      // Parse CSV with selected broker format
+      const parsedTrades = parseCSV(text, selectedBroker);
+
+      if (parsedTrades.length === 0) {
+        setImportStatus('No trades found in CSV');
+        return;
+      }
+
+      setImportStatus(`Found ${parsedTrades.length} trades. Importing...`);
+
+      // Get the broker portfolio
+      const brokerPortfolio = portfolios.find(p => p.broker === selectedBroker);
+      if (!brokerPortfolio) {
+        setImportStatus('Error: Broker portfolio not found');
+        return;
+      }
+
+      // Convert parsed trades to Trade objects
+      const newTrades: Trade[] = parsedTrades.map((pt: ParsedTrade) => {
+        const trade: Trade = {
+          id: `${Date.now()}-${Math.random()}`,
+          portfolioId: brokerPortfolio.id,
+          symbol: pt.symbol,
+          assetType: pt.assetType,
+          type: pt.position === 'LONG' ? 'long' : 'short',
+          entryDate: pt.date,
+          status: pt.status === 'CLOSED' || pt.status === 'EXPIRED' ? 'closed' : 'open',
+          broker: pt.broker,
+          notes: pt.rawAction || ''
+        };
+
+        // Add asset-specific fields
+        if (pt.assetType === 'stock') {
+          trade.entryPrice = pt.entryPrice;
+          trade.shares = pt.shares;
+        } else if (pt.assetType === 'option') {
+          trade.optionType = pt.optionType;
+          trade.strikePrice = pt.strikePrice;
+          trade.expirationDate = pt.expirationDate;
+          trade.premium = pt.premium;
+          trade.contracts = pt.contracts;
+        }
+
+        return trade;
+      });
+
+      // Add to existing trades
+      setTrades([...trades, ...newTrades]);
+      setImportStatus(`Successfully imported ${newTrades.length} trades!`);
+
+      // Auto-select the broker portfolio
+      setSelectedPortfolio(brokerPortfolio.id);
+
+      setTimeout(() => {
+        setShowImportCSV(false);
+        setImportStatus('');
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      setImportStatus(`Error: ${error instanceof Error ? error.message : 'Failed to import CSV'}`);
+    }
   };
 
   const handleAddTrade = () => {
@@ -480,7 +589,11 @@ export default function PortfolioPage() {
     }
   };
 
-  const handleImportCSV = () => {
+  const handleOpenImportModal = () => {
+    setShowImportCSV(true);
+  };
+
+  const handleImportCSV_OLD = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
@@ -675,10 +788,10 @@ export default function PortfolioPage() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={handleImportCSV}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+                onClick={handleOpenImportModal}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
               >
-                <Upload className="w-4 h-4" />
+                <FileUp className="w-4 h-4" />
                 Import CSV
               </button>
               <button
@@ -703,11 +816,16 @@ export default function PortfolioPage() {
             <select
               value={selectedPortfolio}
               onChange={(e) => setSelectedPortfolio(e.target.value)}
-              className="px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
             >
-              <option value="all">All Portfolios</option>
               {portfolios.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.broker === 'ALL' ? '📊 All Accounts' :
+                   p.broker === 'FIDELITY' ? '🏦 Fidelity' :
+                   p.broker === 'TDA' ? '📈 Think or Swim' :
+                   p.broker === 'WEDBUSH' ? '💼 Wedbush' :
+                   p.name}
+                </option>
               ))}
             </select>
             <button
@@ -1443,6 +1561,106 @@ export default function PortfolioPage() {
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-medium transition-all"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportCSV && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowImportCSV(false)}>
+          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full border border-gray-800" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Import CSV from Broker</h3>
+              <button onClick={() => setShowImportCSV(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Select Broker</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setSelectedBroker('FIDELITY')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'FIDELITY'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    Fidelity
+                  </button>
+                  <button
+                    onClick={() => setSelectedBroker('TDA')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'TDA'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    TDA
+                  </button>
+                  <button
+                    onClick={() => setSelectedBroker('WEDBUSH')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'WEDBUSH'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    Wedbush
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Upload CSV File</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCSVImport}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                />
+              </div>
+
+              {importStatus && (
+                <div className={`p-3 rounded ${
+                  importStatus.includes('Error') || importStatus.includes('No trades')
+                    ? 'bg-red-900/20 text-red-400'
+                    : importStatus.includes('Successfully')
+                    ? 'bg-green-900/20 text-green-400'
+                    : 'bg-blue-900/20 text-blue-400'
+                }`}>
+                  {importStatus}
+                </div>
+              )}
+
+              <div className="text-sm text-gray-400 bg-gray-800 p-3 rounded">
+                <p className="font-semibold mb-1">Instructions:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Select your broker from the buttons above</li>
+                  <li>Export your trades as CSV from your broker</li>
+                  <li>Upload the CSV file using the button above</li>
+                  <li>Trades will be automatically parsed and imported</li>
+                </ol>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    setShowImportCSV(false);
+                    setImportStatus('');
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-medium transition-all"
+                >
+                  Close
                 </button>
               </div>
             </div>
