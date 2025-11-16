@@ -376,8 +376,15 @@ export default function PortfolioPage() {
     };
 
     setPortfolios([...portfolios, portfolio]);
+
+    // Auto-select the new portfolio in the trade form
+    setNewTrade(prev => ({ ...prev, portfolioId: portfolio.id }));
+
     setNewPortfolioName('');
     setShowAddPortfolio(false);
+
+    // Reopen Add Trade modal if it was open before
+    setShowAddTrade(true);
   };
 
   // Handle CSV Import
@@ -836,7 +843,17 @@ export default function PortfolioPage() {
               New Portfolio
             </button>
             <button
-              onClick={() => setShowAddTrade(true)}
+              onClick={() => {
+                // Set portfolioId to currently selected portfolio when opening modal
+                // If "All Accounts" is selected, default to first broker portfolio
+                if (!newTrade.portfolioId) {
+                  const targetPortfolio = selectedPortfolio === 'all'
+                    ? portfolios.find(p => p.broker !== 'ALL')?.id || portfolios[0]?.id
+                    : selectedPortfolio;
+                  setNewTrade(prev => ({ ...prev, portfolioId: targetPortfolio }));
+                }
+                setShowAddTrade(true);
+              }}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -1124,6 +1141,37 @@ export default function PortfolioPage() {
               <button onClick={() => setShowAddTrade(false)} className="text-gray-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Portfolio Selection */}
+            <div className="mb-6 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+              <label className="text-sm text-gray-400 mb-2 block">Select Portfolio/Broker</label>
+              <div className="flex gap-2">
+                <select
+                  value={newTrade.portfolioId || selectedPortfolio}
+                  onChange={(e) => setNewTrade(prev => ({ ...prev, portfolioId: e.target.value }))}
+                  className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                >
+                  {portfolios.filter(p => p.broker !== 'ALL').map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.broker === 'FIDELITY' ? '🏦 Fidelity' :
+                       p.broker === 'TDA' ? '📈 Think or Swim' :
+                       p.broker === 'WEDBUSH' ? '💼 Wedbush' :
+                       p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    setShowAddTrade(false);
+                    setShowAddPortfolio(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Portfolio
+                </button>
+              </div>
             </div>
 
             {/* Popular Symbols */}
