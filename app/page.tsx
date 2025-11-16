@@ -395,6 +395,14 @@ export default function Home() {
             )}
 
             <Link
+              href="/scanner"
+              className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Zap className="w-5 h-5" />
+              Pro Scanner
+            </Link>
+
+            <Link
               href="/portfolio"
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
             >
