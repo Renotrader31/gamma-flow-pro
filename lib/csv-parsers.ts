@@ -241,12 +241,149 @@ export function parseTDACSV(csvContent: string): ParsedTrade[] {
 
 /**
  * Parse Wedbush CSV format
- * Will be implemented after receiving sample Wedbush CSV
+ *
+ * Wedbush Format:
+ * - Multi-line format: Each trade has main row + Cusip/Desc/Date/Trailer rows
+ * - Buy/Sell Codes: STO (Sell to Open), BTO (Buy to Open), BTC (Buy to Close), STC (Sell to Close)
+ * - Description line format: "Desc: SPDR S P 500 ETF TR NOV 14,2025 @ 671 PUT 100 MULTIPLIER"
+ * - Columns: Trade Date, Settle Date, Buy/Sell Code, Symbol, QTY, Price, Principal, etc.
  */
 export function parseWedbushCSV(csvContent: string): ParsedTrade[] {
-  // TODO: Implement after receiving Wedbush CSV format
-  console.warn('Wedbush CSV parser not yet implemented');
-  return [];
+  const lines = csvContent.trim().split('\n');
+  const trades: ParsedTrade[] = [];
+
+  let i = 0;
+  // Skip header lines until we find the column headers
+  while (i < lines.length && !lines[i].includes('Trade\nDate')) {
+    i++;
+  }
+  i++; // Skip the header row itself
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    // Skip empty lines and footer
+    if (!line || line.includes('Account information') || line.includes('Total Shares') || line.includes('Total Dollars')) {
+      i++;
+      continue;
+    }
+
+    // Check if this is a trade data row (has date pattern MM/DD/YYYY)
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(line)) {
+      try {
+        // Parse main trade row
+        const parts = line.split(/\s+/);
+
+        // Find the description line (next few lines)
+        let descLine = '';
+        let j = i + 1;
+        while (j < lines.length && j < i + 5) {
+          if (lines[j].includes('Desc:')) {
+            descLine = lines[j];
+            break;
+          }
+          j++;
+        }
+
+        if (descLine) {
+          const trade = parseWedbushTrade(line, descLine);
+          if (trade) {
+            trades.push(trade);
+          }
+        }
+
+        // Skip to next trade (past Cusip, Desc, Date, Trailer lines)
+        i = j + 3;
+      } catch (error) {
+        console.error('Error parsing Wedbush trade:', error, { line });
+        i++;
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return trades;
+}
+
+function parseWedbushTrade(tradeLine: string, descLine: string): ParsedTrade | null {
+  // Parse trade line: "11/14/2025 11/17/2025 STO SPY 3.000 579.00 0.90 0.07 577.43 5AIVL 2 USD"
+  const parts = tradeLine.split(/\s+/);
+
+  if (parts.length < 10) return null;
+
+  const tradeDate = parts[0]; // MM/DD/YYYY
+  const settleDate = parts[1];
+  const buySellCode = parts[2]; // STO, BTO, BTC, STC
+  const symbol = parts[3];
+  const qty = parseFloat(parts[4]);
+  const price = parseFloat(parts[5]);
+  const netAmount = parseFloat(parts[8]);
+
+  // Parse description: "Desc: SPDR S P 500 ETF TR NOV 14,2025 @ 671 PUT 100 MULTIPLIER"
+  const descMatch = descLine.match(/Desc:\s+(.+?)\s+([A-Z]{3})\s+(\d{1,2}),(\d{4})\s+@\s+([\d.]+)\s+(CALL|PUT)/);
+
+  if (!descMatch) return null;
+
+  const [, fullName, month, day, year, strikeStr, optionType] = descMatch;
+  const strike = parseFloat(strikeStr);
+
+  // Convert month to number
+  const monthMap: { [key: string]: string } = {
+    'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+    'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+    'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+  };
+  const expirationDate = `${year}-${monthMap[month]}-${day.padStart(2, '0')}`;
+
+  // Parse trade date
+  const [tMonth, tDay, tYear] = tradeDate.split('/');
+  const date = `${tYear}-${tMonth.padStart(2, '0')}-${tDay.padStart(2, '0')}`;
+
+  // Determine action and position based on Buy/Sell code
+  let action: 'BUY' | 'SELL' = 'BUY';
+  let position: 'LONG' | 'SHORT' = 'LONG';
+  let status: 'OPEN' | 'CLOSED' = 'OPEN';
+
+  switch (buySellCode) {
+    case 'BTO': // Buy to Open
+      action = 'BUY';
+      position = 'LONG';
+      status = 'OPEN';
+      break;
+    case 'STO': // Sell to Open
+      action = 'SELL';
+      position = 'SHORT';
+      status = 'OPEN';
+      break;
+    case 'BTC': // Buy to Close
+      action = 'BUY';
+      position = 'SHORT'; // Closing a short position
+      status = 'CLOSED';
+      break;
+    case 'STC': // Sell to Close
+      action = 'SELL';
+      position = 'LONG'; // Closing a long position
+      status = 'CLOSED';
+      break;
+  }
+
+  return {
+    symbol,
+    assetType: 'option',
+    action,
+    position,
+    contracts: Math.abs(qty),
+    premium: price,
+    optionType: optionType as 'CALL' | 'PUT',
+    strikePrice: strike,
+    expirationDate,
+    date,
+    totalAmount: Math.abs(netAmount),
+    broker: 'WEDBUSH',
+    status,
+    rawAction: `${buySellCode} ${symbol} ${qty} @ ${price}`
+  };
 }
 
 /**
