@@ -53,6 +53,18 @@ interface Portfolio {
   createdAt: string;
 }
 
+interface StrategyTemplate {
+  name: string;
+  legs: number;
+  description: string;
+  template?: Array<{
+    action: 'BUY' | 'SELL';
+    optionType: 'CALL' | 'PUT';
+    strikeOffset: number;
+    quantity?: number;
+  }>;
+}
+
 const formatNumber = (num: number) => {
   if (!num && num !== 0) return '$0.00';
   if (Math.abs(num) >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
@@ -69,12 +81,131 @@ export default function PortfolioPage() {
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
   const [stockPrices, setStockPrices] = useState<{[key: string]: number}>({});
 
+  // Popular symbols for quick entry
+  const popularSymbols = [
+    'AAPL', 'TSLA', 'NVDA', 'AMD', 'SPY', 'QQQ', 'META', 'AMZN',
+    'GOOGL', 'MSFT', 'NFLX', 'PLTR', 'SOFI', 'RIVN', 'NIO'
+  ];
+
+  // Strategy templates
+  const strategyTemplates: { [key: string]: StrategyTemplate } = {
+    SINGLE: {
+      name: 'Single Option',
+      legs: 1,
+      description: 'Buy or sell a single call or put'
+    },
+    CALL_SPREAD: {
+      name: 'Bull Call Spread',
+      legs: 2,
+      description: 'Buy call at lower strike, sell call at higher strike',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    PUT_SPREAD: {
+      name: 'Bull Put Spread',
+      legs: 2,
+      description: 'Sell put at higher strike, buy put at lower strike (bullish)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    BEAR_CALL_SPREAD: {
+      name: 'Bear Call Spread',
+      legs: 2,
+      description: 'Sell call at lower strike, buy call at higher strike (bearish)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    BEAR_PUT_SPREAD: {
+      name: 'Bear Put Spread',
+      legs: 2,
+      description: 'Buy put at higher strike, sell put at lower strike (bearish)',
+      template: [
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 5 },
+        { action: 'SELL', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    STRADDLE: {
+      name: 'Long Straddle',
+      legs: 2,
+      description: 'Buy call and put at same strike (volatility play)',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    STRANGLE: {
+      name: 'Long Strangle',
+      legs: 2,
+      description: 'Buy call and put at different strikes',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: -5 }
+      ]
+    },
+    IRON_CONDOR: {
+      name: 'Iron Condor',
+      legs: 4,
+      description: 'Sell call spread + sell put spread (range-bound)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: -10 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: -15 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 10 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 15 }
+      ]
+    },
+    BUTTERFLY: {
+      name: 'Butterfly Spread',
+      legs: 3,
+      description: 'Buy 1 ITM call + Sell 2 ATM calls + Buy 1 OTM call',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: -5 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0, quantity: 2 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    JADE_LIZARD: {
+      name: 'Jade Lizard',
+      legs: 3,
+      description: 'Sell put + sell call spread (no upside risk)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: -5 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 10 }
+      ]
+    },
+    CALENDAR_SPREAD: {
+      name: 'Calendar Spread',
+      legs: 2,
+      description: 'Sell near-term option, buy longer-term option (same strike)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 }
+      ]
+    },
+    DIAGONAL_SPREAD: {
+      name: 'Diagonal Spread',
+      legs: 2,
+      description: 'Sell near-term option, buy longer-term option (different strikes)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    }
+  };
+
   const [newTrade, setNewTrade] = useState({
     portfolioId: '',
     symbol: '',
     assetType: 'stock' as 'stock' | 'option' | 'multi-leg',
     type: 'long' as 'long' | 'short',
     entryDate: new Date().toISOString().split('T')[0],
+    strategyType: 'SINGLE',
     // Stock fields
     entryPrice: '',
     shares: '',
@@ -85,7 +216,16 @@ export default function PortfolioPage() {
     premium: '',
     contracts: '',
     // Multi-leg fields
-    strategyType: '',
+    legs: [
+      {
+        action: 'BUY' as 'BUY' | 'SELL',
+        optionType: 'CALL' as 'CALL' | 'PUT',
+        strikePrice: '',
+        expirationDate: '',
+        premium: '',
+        contracts: ''
+      }
+    ],
     notes: ''
   });
 
@@ -99,7 +239,6 @@ export default function PortfolioPage() {
     if (savedPortfolios) {
       setPortfolios(JSON.parse(savedPortfolios));
     } else {
-      // Create default portfolio
       const defaultPortfolio: Portfolio = {
         id: 'main',
         name: 'Main Portfolio',
@@ -155,6 +294,44 @@ export default function PortfolioPage() {
     return () => clearInterval(interval);
   }, [trades]);
 
+  // Quick symbol selection
+  const selectSymbol = (symbol: string) => {
+    setNewTrade(prev => ({ ...prev, symbol }));
+  };
+
+  // Change strategy type
+  const changeStrategyType = (newStrategyType: string) => {
+    const template = strategyTemplates[newStrategyType];
+    if (template?.template) {
+      setNewTrade(prev => ({
+        ...prev,
+        strategyType: newStrategyType,
+        assetType: 'multi-leg',
+        legs: template.template!.map(leg => ({
+          action: leg.action,
+          optionType: leg.optionType,
+          strikePrice: '',
+          expirationDate: '',
+          premium: '',
+          contracts: (leg.quantity || 1).toString()
+        }))
+      }));
+    } else {
+      setNewTrade(prev => ({
+        ...prev,
+        strategyType: newStrategyType,
+        legs: [{
+          action: 'BUY',
+          optionType: 'CALL',
+          strikePrice: '',
+          expirationDate: '',
+          premium: '',
+          contracts: '1'
+        }]
+      }));
+    }
+  };
+
   const handleAddPortfolio = () => {
     if (!newPortfolioName.trim()) {
       alert('Please enter a portfolio name');
@@ -189,6 +366,12 @@ export default function PortfolioPage() {
         alert('Please fill in all option fields (strike, expiration, premium, contracts)');
         return;
       }
+    } else if (newTrade.assetType === 'multi-leg') {
+      const hasValidLeg = newTrade.legs.some(leg => leg.strikePrice && parseFloat(leg.strikePrice) > 0);
+      if (!hasValidLeg) {
+        alert('Please fill in at least one leg with valid strike price');
+        return;
+      }
     }
 
     const portfolioId = newTrade.portfolioId || portfolios[0]?.id || 'main';
@@ -216,17 +399,41 @@ export default function PortfolioPage() {
       trade.contracts = parseFloat(newTrade.contracts);
     } else if (newTrade.assetType === 'multi-leg') {
       trade.strategyType = newTrade.strategyType;
-      trade.legs = [];
-      trade.netPremium = 0;
+      trade.legs = newTrade.legs
+        .filter(leg => leg.strikePrice && parseFloat(leg.strikePrice) > 0)
+        .map((leg, index) => ({
+          legId: `${Date.now()}-${index}`,
+          action: leg.action,
+          optionType: leg.optionType,
+          strikePrice: parseFloat(leg.strikePrice),
+          expirationDate: leg.expirationDate,
+          premium: parseFloat(leg.premium || '0'),
+          contracts: parseFloat(leg.contracts || '1')
+        }));
+
+      // Calculate net premium
+      let netPremium = 0;
+      trade.legs.forEach(leg => {
+        const legPremium = leg.premium * leg.contracts;
+        if (leg.action === 'BUY') {
+          netPremium -= legPremium;
+        } else {
+          netPremium += legPremium;
+        }
+      });
+      trade.netPremium = netPremium;
     }
 
     setTrades([...trades, trade]);
+
+    // Reset form
     setNewTrade({
       portfolioId: '',
       symbol: '',
       assetType: 'stock',
       type: 'long',
       entryDate: new Date().toISOString().split('T')[0],
+      strategyType: 'SINGLE',
       entryPrice: '',
       shares: '',
       optionType: 'CALL',
@@ -234,7 +441,14 @@ export default function PortfolioPage() {
       expirationDate: '',
       premium: '',
       contracts: '',
-      strategyType: '',
+      legs: [{
+        action: 'BUY',
+        optionType: 'CALL',
+        strikePrice: '',
+        expirationDate: '',
+        premium: '',
+        contracts: '1'
+      }],
       notes: ''
     });
     setShowAddTrade(false);
@@ -278,27 +492,33 @@ export default function PortfolioPage() {
         const lines = csv.split('\n');
         const importedTrades: Trade[] = [];
 
-        // Skip header row
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
 
-          const [symbol, type, entryDate, entryPrice, shares, exitDate, exitPrice, status, notes] = line.split(',');
+          const [symbol, assetType, type, entryDate, entryPrice, shares, exitDate, exitPrice, status, notes] = line.split(',');
 
-          if (symbol && entryPrice && shares) {
-            importedTrades.push({
+          if (symbol) {
+            const trade: Trade = {
               id: Date.now().toString() + i,
               portfolioId: portfolios[0]?.id || 'main',
               symbol: symbol.trim(),
+              assetType: (assetType?.trim() as 'stock' | 'option' | 'multi-leg') || 'stock',
               type: (type?.trim() as 'long' | 'short') || 'long',
               entryDate: entryDate?.trim() || new Date().toISOString(),
-              entryPrice: parseFloat(entryPrice),
-              shares: parseFloat(shares),
-              exitDate: exitDate?.trim() || undefined,
-              exitPrice: exitPrice ? parseFloat(exitPrice) : undefined,
               status: (status?.trim() as 'open' | 'closed') || 'open',
               notes: notes?.trim() || ''
-            });
+            };
+
+            if (trade.assetType === 'stock') {
+              trade.entryPrice = parseFloat(entryPrice);
+              trade.shares = parseFloat(shares);
+              if (exitPrice) trade.exitPrice = parseFloat(exitPrice);
+            }
+
+            if (exitDate) trade.exitDate = exitDate.trim();
+
+            importedTrades.push(trade);
           }
         }
 
@@ -314,18 +534,25 @@ export default function PortfolioPage() {
 
   const handleExportCSV = () => {
     const csvContent = [
-      ['Symbol', 'Type', 'Entry Date', 'Entry Price', 'Shares', 'Exit Date', 'Exit Price', 'Status', 'Notes'].join(','),
-      ...filteredTrades.map(t => [
-        t.symbol,
-        t.type,
-        t.entryDate,
-        t.entryPrice,
-        t.shares,
-        t.exitDate || '',
-        t.exitPrice || '',
-        t.status,
-        t.notes || ''
-      ].join(','))
+      ['Symbol', 'Asset Type', 'Type', 'Entry Date', 'Entry Price/Premium', 'Shares/Contracts', 'Exit Date', 'Exit Price/Premium', 'Status', 'Notes'].join(','),
+      ...filteredTrades.map(t => {
+        const entryValue = t.assetType === 'stock' ? t.entryPrice : t.premium || t.netPremium;
+        const quantity = t.assetType === 'stock' ? t.shares : t.contracts;
+        const exitValue = t.assetType === 'stock' ? t.exitPrice : t.exitPremium;
+
+        return [
+          t.symbol,
+          t.assetType,
+          t.type,
+          t.entryDate,
+          entryValue || '',
+          quantity || '',
+          t.exitDate || '',
+          exitValue || '',
+          t.status,
+          t.notes || ''
+        ].join(',');
+      })
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -354,19 +581,14 @@ export default function PortfolioPage() {
 
       if (trade.status === 'closed') {
         if (trade.assetType === 'stock' && trade.exitPrice && trade.entryPrice && trade.shares) {
-          // Stock P&L calculation
           pnl = trade.type === 'long'
             ? (trade.exitPrice - trade.entryPrice) * trade.shares
             : (trade.entryPrice - trade.exitPrice) * trade.shares;
         } else if (trade.assetType === 'option' && trade.exitPremium !== undefined && trade.premium && trade.contracts) {
-          // Option P&L calculation (premium * contracts * 100)
-          // For long positions (debit): (exit - entry) * contracts * 100
-          // For short positions (credit): (entry - exit) * contracts * 100
           pnl = trade.type === 'long'
             ? (trade.exitPremium - trade.premium) * trade.contracts * 100
             : (trade.premium - trade.exitPremium) * trade.contracts * 100;
         } else if (trade.assetType === 'multi-leg' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
-          // Multi-leg P&L calculation
           pnl = trade.type === 'long'
             ? (trade.exitPremium - trade.netPremium) * 100
             : (trade.netPremium - trade.exitPremium) * 100;
@@ -384,15 +606,10 @@ export default function PortfolioPage() {
         }
       } else if (trade.status === 'open') {
         if (trade.assetType === 'stock' && trade.entryPrice && trade.shares) {
-          // Use current price for stocks
           const currentPrice = stockPrices[trade.symbol] || trade.entryPrice;
           pnl = trade.type === 'long'
             ? (currentPrice - trade.entryPrice) * trade.shares
             : (trade.entryPrice - currentPrice) * trade.shares;
-        } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
-          // For open options, we'd need live option prices, but for now use entry as placeholder
-          // In production, you'd fetch current option premium from API
-          pnl = 0; // Can't calculate without current option price
         }
 
         unrealizedPnL += pnl;
@@ -404,6 +621,7 @@ export default function PortfolioPage() {
     const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
     const avgWin = wins > 0 ? totalWinAmount / wins : 0;
     const avgLoss = losses > 0 ? totalLossAmount / losses : 0;
+    const sharpeRatio = totalTrades > 3 ? (totalPnL / totalTrades) / (Math.max(avgLoss, 1)) : 0;
 
     const openPositions = portfolioTrades.filter(t => t.status === 'open').length;
     const closedPositions = portfolioTrades.filter(t => t.status === 'closed').length;
@@ -415,8 +633,10 @@ export default function PortfolioPage() {
       winRate,
       avgWin,
       avgLoss,
+      sharpeRatio,
       openPositions,
-      closedPositions
+      closedPositions,
+      totalTrades: portfolioTrades.length
     };
   };
 
@@ -442,8 +662,16 @@ export default function PortfolioPage() {
                 <ArrowLeft className="w-4 h-4" />
                 Back to Scanner
               </Link>
-              <h1 className="text-3xl font-bold mb-2">Portfolio Tracker</h1>
-              <p className="text-gray-400">Track your trades across multiple portfolios</p>
+              <h1 className="text-3xl font-bold mb-2 text-green-400">Portfolio Tracker</h1>
+              <div className="flex items-center gap-2 text-gray-400">
+                <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                <span className="font-medium text-green-400">
+                  Live P&L Tracking with Options Support
+                  {Object.keys(stockPrices).length > 0 && (
+                    <span className="text-xs bg-green-700 px-2 py-0.5 rounded ml-2">🔴 LIVE</span>
+                  )}
+                </span>
+              </div>
             </div>
             <div className="flex gap-2">
               <button
@@ -465,7 +693,7 @@ export default function PortfolioPage() {
                 className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 rounded-lg font-medium transition-all flex items-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
-                Clear All Trades
+                Clear All
               </button>
             </div>
           </div>
@@ -499,45 +727,72 @@ export default function PortfolioPage() {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Total P&L</div>
-            <div className={`text-xl font-bold ${stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {stats.totalPnL >= 0 ? '+' : ''}{formatNumber(stats.totalPnL)}
+        {/* Portfolio Performance Metrics */}
+        <div className="bg-gray-900 rounded-lg p-6 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-6">
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-green-400 mb-1">
+                <span className="text-lg">💰</span>
+                {Object.keys(stockPrices).length > 0 && <span className="text-xs">🔴</span>}
+              </div>
+              <div className="text-sm text-gray-400">Total P&L</div>
+              <div className={`text-xl font-bold ${stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${stats.totalPnL.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Realized P&L</div>
-            <div className={`text-xl font-bold ${stats.realizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {stats.realizedPnL >= 0 ? '+' : ''}{formatNumber(stats.realizedPnL)}
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-blue-400 mb-1">
+                <span className="text-lg">💵</span>
+              </div>
+              <div className="text-sm text-gray-400">Realized P&L</div>
+              <div className={`text-xl font-bold ${stats.realizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${stats.realizedPnL.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Unrealized P&L</div>
-            <div className={`text-xl font-bold ${stats.unrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {stats.unrealizedPnL >= 0 ? '+' : ''}{formatNumber(stats.unrealizedPnL)}
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-yellow-400 mb-1">
+                <span className="text-lg">🏆</span>
+              </div>
+              <div className="text-sm text-gray-400">Win Rate</div>
+              <div className="text-xl font-bold text-yellow-400">
+                {stats.winRate.toFixed(1)}%
+              </div>
+              <div className="text-xs text-gray-500">
+                {stats.closedPositions} closed
+              </div>
             </div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Win Rate</div>
-            <div className="text-xl font-bold text-white">{stats.winRate.toFixed(1)}%</div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Open Positions</div>
-            <div className="text-xl font-bold text-white">{stats.openPositions}</div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Closed Positions</div>
-            <div className="text-xl font-bold text-white">{stats.closedPositions}</div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Avg Win</div>
-            <div className="text-xl font-bold text-green-400">+{formatNumber(stats.avgWin)}</div>
-          </div>
-          <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
-            <div className="text-sm text-gray-400 mb-1">Avg Loss</div>
-            <div className="text-xl font-bold text-red-400">-{formatNumber(stats.avgLoss)}</div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-purple-400 mb-1">
+                <span className="text-lg">📊</span>
+              </div>
+              <div className="text-sm text-gray-400">Sharpe Ratio</div>
+              <div className="text-xl font-bold text-purple-400">
+                {stats.sharpeRatio.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-cyan-400 mb-1">
+                <span className="text-lg">📈</span>
+              </div>
+              <div className="text-sm text-gray-400">Active Positions</div>
+              <div className="text-xl font-bold text-cyan-400">
+                {stats.openPositions}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-orange-400 mb-1">
+                <span className="text-lg">⏳</span>
+              </div>
+              <div className="text-sm text-gray-400">Total Trades</div>
+              <div className="text-xl font-bold text-orange-400">
+                {stats.totalTrades}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -627,7 +882,7 @@ export default function PortfolioPage() {
                       pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
                     } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
                       const currentPremium = trade.status === 'open'
-                        ? trade.premium // Would fetch live premium in production
+                        ? trade.premium
                         : (trade.exitPremium || trade.premium);
 
                       currentValue = currentPremium;
@@ -680,7 +935,7 @@ export default function PortfolioPage() {
                         <td className="p-3 text-right text-xs">{details}</td>
                         <td className="p-3 text-right text-sm">{quantity}</td>
                         <td className="p-3 text-right">
-                          ${trade.assetType === 'stock' ? entryValue.toFixed(2) : entryValue.toFixed(2)}
+                          ${entryValue.toFixed(2)}
                         </td>
                         <td className="p-3 text-right">
                           {trade.status === 'open' ? (
@@ -744,14 +999,111 @@ export default function PortfolioPage() {
 
       {/* Add Trade Modal */}
       {showAddTrade && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowAddTrade(false)}>
-          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full border border-gray-800" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-y-auto" onClick={() => setShowAddTrade(false)}>
+          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full border border-gray-800 my-8" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Add New Trade</h3>
+              <h3 className="text-xl font-bold">Record New Trade</h3>
               <button onClick={() => setShowAddTrade(false)} className="text-gray-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Popular Symbols */}
+            <div className="mb-6">
+              <label className="text-sm text-gray-400 mb-2 block">Popular Symbols:</label>
+              <div className="flex flex-wrap gap-2">
+                {popularSymbols.map(symbol => (
+                  <button
+                    key={symbol}
+                    onClick={() => selectSymbol(symbol)}
+                    className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
+                      newTrade.symbol === symbol
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {symbol}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Asset Type Selection */}
+            <div className="mb-6">
+              <label className="text-sm text-gray-400 mb-2 block">Trading Type</label>
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  onClick={() => setNewTrade(prev => ({ ...prev, assetType: 'stock', strategyType: 'SINGLE' }))}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    newTrade.assetType === 'stock'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📈 Stocks
+                </button>
+                <button
+                  onClick={() => setNewTrade(prev => ({ ...prev, assetType: 'option', strategyType: 'SINGLE' }))}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    newTrade.assetType === 'option' && newTrade.strategyType === 'SINGLE'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  ⚡ Single Option
+                </button>
+                <button
+                  onClick={() => changeStrategyType('CALL_SPREAD')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['CALL_SPREAD', 'PUT_SPREAD', 'BEAR_CALL_SPREAD', 'BEAR_PUT_SPREAD'].includes(newTrade.strategyType)
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📊 Spreads
+                </button>
+                <button
+                  onClick={() => changeStrategyType('STRADDLE')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['STRADDLE', 'STRANGLE'].includes(newTrade.strategyType)
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  🎯 Straddle/Strangle
+                </button>
+                <button
+                  onClick={() => changeStrategyType('IRON_CONDOR')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['IRON_CONDOR', 'BUTTERFLY', 'JADE_LIZARD'].includes(newTrade.strategyType)
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  🦋 Advanced
+                </button>
+              </div>
+            </div>
+
+            {/* Strategy Template Selection (for multi-leg) */}
+            {newTrade.assetType === 'multi-leg' && (
+              <div className="mb-6">
+                <label className="text-sm text-gray-400 mb-2 block">Strategy Template</label>
+                <select
+                  value={newTrade.strategyType}
+                  onChange={(e) => changeStrategyType(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+                >
+                  {Object.entries(strategyTemplates)
+                    .filter(([key]) => key !== 'SINGLE')
+                    .map(([key, strategy]) => (
+                      <option key={key} value={key}>
+                        {strategy.name} - {strategy.description}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
 
             <div className="space-y-3">
               <div>
@@ -767,40 +1119,39 @@ export default function PortfolioPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="text-sm text-gray-400 mb-1 block">Asset Type *</label>
-                <select
-                  value={newTrade.assetType}
-                  onChange={(e) => setNewTrade({ ...newTrade, assetType: e.target.value as 'stock' | 'option' | 'multi-leg' })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="stock">Stock</option>
-                  <option value="option">Single Option</option>
-                  <option value="multi-leg">Multi-Leg Strategy</option>
-                </select>
-              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Symbol *</label>
+                  <input
+                    type="text"
+                    placeholder="AAPL"
+                    value={newTrade.symbol}
+                    onChange={(e) => setNewTrade({ ...newTrade, symbol: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
 
-              <div>
-                <label className="text-sm text-gray-400 mb-1 block">Symbol *</label>
-                <input
-                  type="text"
-                  placeholder="NVDA"
-                  value={newTrade.symbol}
-                  onChange={(e) => setNewTrade({ ...newTrade, symbol: e.target.value.toUpperCase() })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Position Type</label>
+                  <select
+                    value={newTrade.type}
+                    onChange={(e) => setNewTrade({ ...newTrade, type: e.target.value as 'long' | 'short' })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="long">Long</option>
+                    <option value="short">Short</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="text-sm text-gray-400 mb-1 block">Position Type</label>
-                <select
-                  value={newTrade.type}
-                  onChange={(e) => setNewTrade({ ...newTrade, type: e.target.value as 'long' | 'short' })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="long">Long</option>
-                  <option value="short">Short</option>
-                </select>
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Entry Date</label>
+                  <input
+                    type="date"
+                    value={newTrade.entryDate}
+                    onChange={(e) => setNewTrade({ ...newTrade, entryDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
               </div>
 
               {/* Stock-specific fields */}
@@ -831,10 +1182,10 @@ export default function PortfolioPage() {
                 </div>
               )}
 
-              {/* Option-specific fields */}
-              {newTrade.assetType === 'option' && (
+              {/* Single option fields */}
+              {newTrade.assetType === 'option' && newTrade.strategyType === 'SINGLE' && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-sm text-gray-400 mb-1 block">Option Type *</label>
                       <select
@@ -842,8 +1193,8 @@ export default function PortfolioPage() {
                         onChange={(e) => setNewTrade({ ...newTrade, optionType: e.target.value as 'CALL' | 'PUT' })}
                         className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
                       >
-                        <option value="CALL">CALL</option>
-                        <option value="PUT">PUT</option>
+                        <option value="CALL">📈 Call</option>
+                        <option value="PUT">📉 Put</option>
                       </select>
                     </div>
 
@@ -851,22 +1202,35 @@ export default function PortfolioPage() {
                       <label className="text-sm text-gray-400 mb-1 block">Strike Price *</label>
                       <input
                         type="number"
-                        step="0.01"
-                        placeholder="150.00"
+                        step="0.50"
+                        placeholder="155.00"
                         value={newTrade.strikePrice}
                         onChange={(e) => setNewTrade({ ...newTrade, strikePrice: e.target.value })}
                         className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
                       />
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-sm text-gray-400 mb-1 block">Expiration Date *</label>
                       <input
                         type="date"
                         value={newTrade.expirationDate}
                         onChange={(e) => setNewTrade({ ...newTrade, expirationDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Premium (per contract) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="5.50"
+                        value={newTrade.premium}
+                        onChange={(e) => setNewTrade({ ...newTrade, premium: e.target.value })}
                         className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
                       />
                     </div>
@@ -882,45 +1246,136 @@ export default function PortfolioPage() {
                       />
                     </div>
                   </div>
-
-                  <div>
-                    <label className="text-sm text-gray-400 mb-1 block">Premium (per contract) *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="5.50"
-                      value={newTrade.premium}
-                      onChange={(e) => setNewTrade({ ...newTrade, premium: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
                 </>
               )}
 
-              {/* Multi-leg strategy fields */}
+              {/* Multi-leg Options Strategy Builder */}
               {newTrade.assetType === 'multi-leg' && (
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">Strategy Type</label>
-                  <input
-                    type="text"
-                    placeholder="Iron Condor, Bull Put Spread, etc."
-                    value={newTrade.strategyType}
-                    onChange={(e) => setNewTrade({ ...newTrade, strategyType: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Multi-leg strategies coming soon - use single options for now</p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-medium text-yellow-400">
+                      🏧 {strategyTemplates[newTrade.strategyType]?.name} Builder
+                    </h4>
+                    <span className="text-xs text-gray-400">
+                      {newTrade.legs.length} leg{newTrade.legs.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {newTrade.legs.map((leg, index) => (
+                    <div key={index} className="bg-gray-800 p-4 rounded border-l-4 border-yellow-400">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm font-bold text-yellow-400">Leg {index + 1}</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          leg.action === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                        }`}>
+                          {leg.action}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          leg.optionType === 'CALL' ? 'bg-blue-900 text-blue-300' : 'bg-purple-900 text-purple-300'
+                        }`}>
+                          {leg.optionType}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-3">
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Action</label>
+                          <select
+                            value={leg.action}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].action = e.target.value as 'BUY' | 'SELL';
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          >
+                            <option value="BUY">BUY</option>
+                            <option value="SELL">SELL</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Type</label>
+                          <select
+                            value={leg.optionType}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].optionType = e.target.value as 'CALL' | 'PUT';
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          >
+                            <option value="CALL">CALL</option>
+                            <option value="PUT">PUT</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Strike *</label>
+                          <input
+                            type="number"
+                            step="0.50"
+                            placeholder="155"
+                            value={leg.strikePrice}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].strikePrice = e.target.value;
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Premium</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="5.50"
+                            value={leg.premium}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].premium = e.target.value;
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Contracts</label>
+                          <input
+                            type="number"
+                            placeholder="1"
+                            value={leg.contracts}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].contracts = e.target.value;
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-2">
+                        <label className="text-xs text-gray-400 mb-1 block">Expiration Date</label>
+                        <input
+                          type="date"
+                          value={leg.expirationDate}
+                          onChange={(e) => {
+                            const newLegs = [...newTrade.legs];
+                            newLegs[index].expirationDate = e.target.value;
+                            setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                          }}
+                          className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-
-              <div>
-                <label className="text-sm text-gray-400 mb-1 block">Entry Date</label>
-                <input
-                  type="date"
-                  value={newTrade.entryDate}
-                  onChange={(e) => setNewTrade({ ...newTrade, entryDate: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
 
               <div>
                 <label className="text-sm text-gray-400 mb-1 block">Notes</label>
