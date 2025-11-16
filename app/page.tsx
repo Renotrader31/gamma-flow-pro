@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { AITradeIdeas } from './components/AITradeIdeas'
 import { GEXDetailsModal } from './components/GEXDetailsModal'
+import { PortfolioTracker } from './components/PortfolioTracker'
 
 // Helper functions
 const formatNumber = (num: any) => {
@@ -44,6 +45,7 @@ export default function Home() {
   const [selectedStock, setSelectedStock] = useState<any>(null)
   const [showGEXDetails, setShowGEXDetails] = useState(false)
   const [showAIIdeas, setShowAIIdeas] = useState(false)
+  const [showPortfolio, setShowPortfolio] = useState(false)
   const [marketStatus, setMarketStatus] = useState('closed')
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -366,31 +368,41 @@ export default function Home() {
             </button>
           </div>
           
-          {mode === 'scanner' && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowAIIdeas(true)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-              >
-                <Sparkles className="w-5 h-5" />
-                AI Trade Ideas
-              </button>
+          <div className="flex gap-3">
+            {mode === 'scanner' && (
+              <>
+                <button
+                  onClick={() => setShowAIIdeas(true)}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  AI Trade Ideas
+                </button>
 
-              <button
-                onClick={runAllScans}
-                disabled={stockData.length === 0}
-                className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
-              >
-                <PlayCircle className="w-5 h-5" />
-                Scan All Strategies
-              </button>
+                <button
+                  onClick={runAllScans}
+                  disabled={stockData.length === 0}
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+                >
+                  <PlayCircle className="w-5 h-5" />
+                  Scan All Strategies
+                </button>
 
-              <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
-                <Shield className="w-4 h-4 text-green-400" />
-                <span>Quality Filter: Min $5 price, 1M+ volume</span>
-              </div>
-            </div>
-          )}
+                <div className="px-4 py-3 bg-gray-800 rounded-lg flex items-center gap-2 text-sm text-gray-400">
+                  <Shield className="w-4 h-4 text-green-400" />
+                  <span>Quality Filter: Min $5 price, 1M+ volume</span>
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={() => setShowPortfolio(true)}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Briefcase className="w-5 h-5" />
+              Portfolio
+            </button>
+          </div>
         </div>
 
         {/* Scanner Mode */}
@@ -754,7 +766,13 @@ export default function Home() {
       )}
       {showAIIdeas && (
         <AITradeIdeas
+          stock={selectedStock}
           onClose={() => setShowAIIdeas(false)}
+        />
+      )}
+      {showPortfolio && (
+        <PortfolioTracker
+          onClose={() => setShowPortfolio(false)}
         />
       )}
     </div>

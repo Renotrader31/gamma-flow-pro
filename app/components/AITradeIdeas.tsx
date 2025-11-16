@@ -25,9 +25,9 @@ const getExpiryDate = (daysOut: number) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const generateIdeasForSymbol = (symbol: string) => {
+const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   const ideas = [];
-  const basePrice = 100;
+  const basePrice = stockData?.price || 100;
   const timestamp = Date.now();
 
   // 1. Bullish idea - Long Call Spread
@@ -208,22 +208,33 @@ const generateIdeasForSymbol = (symbol: string) => {
 };
 
 // AI Trade Ideas Component
-export const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
+export const AITradeIdeas = ({ stock, onClose }: { stock?: any; onClose: () => void }) => {
   const [selectedIdea, setSelectedIdea] = useState<any>(null);
   const [filter, setFilter] = useState('all');
   const [tradeIdeas, setTradeIdeas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchSymbol, setSearchSymbol] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchTradeIdeas = async (showLoading = true) => {
+  const fetchTradeIdeas = async (symbolToFetch?: string, showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       else setRefreshing(true);
 
+      // If a specific symbol is provided, generate ideas for it
+      if (symbolToFetch) {
+        const ideas = generateIdeasForSymbol(symbolToFetch, stock);
+        setTradeIdeas(ideas);
+        setLoading(false);
+        setRefreshing(false);
+        setLastUpdate(new Date());
+        return;
+      }
+
+      // Try to fetch from API
       const response = await fetch('/api/options-flow');
       const data = await response.json();
       if (data.tradeIdeas && data.tradeIdeas.length > 0) {
@@ -238,11 +249,9 @@ export const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
       }
     } catch (error) {
       console.error('Error fetching trade ideas:', error);
-      // Use fallback data on error
-      const fallbackIdeas = [
-        ...generateIdeasForSymbol('NVDA').slice(0, 2),
-        ...generateIdeasForSymbol('SPY').slice(0, 2),
-      ];
+      // Use fallback data on error - or the stock that was passed in
+      const fallbackSymbol = symbolToFetch || stock?.symbol || 'NVDA';
+      const fallbackIdeas = generateIdeasForSymbol(fallbackSymbol, stock);
       setTradeIdeas(fallbackIdeas);
     } finally {
       setLoading(false);
@@ -251,10 +260,15 @@ export const AITradeIdeas = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-  // Initial fetch on mount
+  // Initial fetch on mount - use the selected stock if provided
   useEffect(() => {
-    fetchTradeIdeas();
-  }, []);
+    if (stock?.symbol) {
+      fetchTradeIdeas(stock.symbol);
+      setSearchSymbol(stock.symbol);
+    } else {
+      fetchTradeIdeas();
+    }
+  }, [stock]);
 
   // Auto-refresh every 10 seconds if enabled
   useEffect(() => {
