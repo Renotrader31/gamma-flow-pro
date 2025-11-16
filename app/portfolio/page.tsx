@@ -6,16 +6,43 @@ import {
   Filter, Calendar, DollarSign, Percent, Target, Activity, Eye, Edit, X
 } from 'lucide-react';
 
+interface OptionLeg {
+  legId: string;
+  action: 'BUY' | 'SELL';
+  optionType: 'CALL' | 'PUT';
+  strikePrice: number;
+  expirationDate: string;
+  premium: number;
+  contracts: number;
+}
+
 interface Trade {
   id: string;
   portfolioId: string;
   symbol: string;
+  assetType: 'stock' | 'option' | 'multi-leg';
   type: 'long' | 'short';
   entryDate: string;
-  entryPrice: number;
-  shares: number;
-  exitDate?: string;
+
+  // Stock fields
+  entryPrice?: number;
+  shares?: number;
   exitPrice?: number;
+
+  // Single option fields
+  optionType?: 'CALL' | 'PUT';
+  strikePrice?: number;
+  expirationDate?: string;
+  premium?: number;
+  contracts?: number;
+
+  // Multi-leg strategy fields
+  strategyType?: string;
+  legs?: OptionLeg[];
+  netPremium?: number;
+
+  exitDate?: string;
+  exitPremium?: number;
   status: 'open' | 'closed';
   notes?: string;
 }
@@ -45,10 +72,20 @@ export default function PortfolioPage() {
   const [newTrade, setNewTrade] = useState({
     portfolioId: '',
     symbol: '',
+    assetType: 'stock' as 'stock' | 'option' | 'multi-leg',
     type: 'long' as 'long' | 'short',
     entryDate: new Date().toISOString().split('T')[0],
+    // Stock fields
     entryPrice: '',
     shares: '',
+    // Option fields
+    optionType: 'CALL' as 'CALL' | 'PUT',
+    strikePrice: '',
+    expirationDate: '',
+    premium: '',
+    contracts: '',
+    // Multi-leg fields
+    strategyType: '',
     notes: ''
   });
 
@@ -136,9 +173,22 @@ export default function PortfolioPage() {
   };
 
   const handleAddTrade = () => {
-    if (!newTrade.symbol || !newTrade.entryPrice || !newTrade.shares) {
-      alert('Please fill in all required fields');
+    if (!newTrade.symbol) {
+      alert('Please enter a symbol');
       return;
+    }
+
+    // Validate based on asset type
+    if (newTrade.assetType === 'stock') {
+      if (!newTrade.entryPrice || !newTrade.shares) {
+        alert('Please fill in entry price and shares for stock trades');
+        return;
+      }
+    } else if (newTrade.assetType === 'option') {
+      if (!newTrade.strikePrice || !newTrade.expirationDate || !newTrade.premium || !newTrade.contracts) {
+        alert('Please fill in all option fields (strike, expiration, premium, contracts)');
+        return;
+      }
     }
 
     const portfolioId = newTrade.portfolioId || portfolios[0]?.id || 'main';
@@ -147,33 +197,60 @@ export default function PortfolioPage() {
       id: Date.now().toString(),
       portfolioId,
       symbol: newTrade.symbol.toUpperCase(),
+      assetType: newTrade.assetType,
       type: newTrade.type,
       entryDate: newTrade.entryDate,
-      entryPrice: parseFloat(newTrade.entryPrice),
-      shares: parseFloat(newTrade.shares),
       status: 'open',
       notes: newTrade.notes
     };
+
+    // Add asset-specific fields
+    if (newTrade.assetType === 'stock') {
+      trade.entryPrice = parseFloat(newTrade.entryPrice);
+      trade.shares = parseFloat(newTrade.shares);
+    } else if (newTrade.assetType === 'option') {
+      trade.optionType = newTrade.optionType;
+      trade.strikePrice = parseFloat(newTrade.strikePrice);
+      trade.expirationDate = newTrade.expirationDate;
+      trade.premium = parseFloat(newTrade.premium);
+      trade.contracts = parseFloat(newTrade.contracts);
+    } else if (newTrade.assetType === 'multi-leg') {
+      trade.strategyType = newTrade.strategyType;
+      trade.legs = [];
+      trade.netPremium = 0;
+    }
 
     setTrades([...trades, trade]);
     setNewTrade({
       portfolioId: '',
       symbol: '',
+      assetType: 'stock',
       type: 'long',
       entryDate: new Date().toISOString().split('T')[0],
       entryPrice: '',
       shares: '',
+      optionType: 'CALL',
+      strikePrice: '',
+      expirationDate: '',
+      premium: '',
+      contracts: '',
+      strategyType: '',
       notes: ''
     });
     setShowAddTrade(false);
   };
 
-  const handleCloseTrade = (tradeId: string, exitPrice: number) => {
-    setTrades(trades.map(t =>
-      t.id === tradeId
-        ? { ...t, status: 'closed' as const, exitDate: new Date().toISOString(), exitPrice }
-        : t
-    ));
+  const handleCloseTrade = (tradeId: string, exitValue: number) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        if (t.assetType === 'stock') {
+          return { ...t, status: 'closed' as const, exitDate: new Date().toISOString(), exitPrice: exitValue };
+        } else if (t.assetType === 'option' || t.assetType === 'multi-leg') {
+          return { ...t, status: 'closed' as const, exitDate: new Date().toISOString(), exitPremium: exitValue };
+        }
+      }
+      return t;
+    }));
   };
 
   const handleDeleteTrade = (id: string) => {
@@ -273,10 +350,27 @@ export default function PortfolioPage() {
     let totalLossAmount = 0;
 
     portfolioTrades.forEach(trade => {
-      if (trade.status === 'closed' && trade.exitPrice) {
-        const pnl = trade.type === 'long'
-          ? (trade.exitPrice - trade.entryPrice) * trade.shares
-          : (trade.entryPrice - trade.exitPrice) * trade.shares;
+      let pnl = 0;
+
+      if (trade.status === 'closed') {
+        if (trade.assetType === 'stock' && trade.exitPrice && trade.entryPrice && trade.shares) {
+          // Stock P&L calculation
+          pnl = trade.type === 'long'
+            ? (trade.exitPrice - trade.entryPrice) * trade.shares
+            : (trade.entryPrice - trade.exitPrice) * trade.shares;
+        } else if (trade.assetType === 'option' && trade.exitPremium !== undefined && trade.premium && trade.contracts) {
+          // Option P&L calculation (premium * contracts * 100)
+          // For long positions (debit): (exit - entry) * contracts * 100
+          // For short positions (credit): (entry - exit) * contracts * 100
+          pnl = trade.type === 'long'
+            ? (trade.exitPremium - trade.premium) * trade.contracts * 100
+            : (trade.premium - trade.exitPremium) * trade.contracts * 100;
+        } else if (trade.assetType === 'multi-leg' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
+          // Multi-leg P&L calculation
+          pnl = trade.type === 'long'
+            ? (trade.exitPremium - trade.netPremium) * 100
+            : (trade.netPremium - trade.exitPremium) * 100;
+        }
 
         realizedPnL += pnl;
         totalPnL += pnl;
@@ -289,10 +383,17 @@ export default function PortfolioPage() {
           totalLossAmount += Math.abs(pnl);
         }
       } else if (trade.status === 'open') {
-        const currentPrice = stockPrices[trade.symbol] || trade.entryPrice;
-        const pnl = trade.type === 'long'
-          ? (currentPrice - trade.entryPrice) * trade.shares
-          : (trade.entryPrice - currentPrice) * trade.shares;
+        if (trade.assetType === 'stock' && trade.entryPrice && trade.shares) {
+          // Use current price for stocks
+          const currentPrice = stockPrices[trade.symbol] || trade.entryPrice;
+          pnl = trade.type === 'long'
+            ? (currentPrice - trade.entryPrice) * trade.shares
+            : (trade.entryPrice - currentPrice) * trade.shares;
+        } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
+          // For open options, we'd need live option prices, but for now use entry as placeholder
+          // In production, you'd fetch current option premium from API
+          pnl = 0; // Can't calculate without current option price
+        }
 
         unrealizedPnL += pnl;
         totalPnL += pnl;
@@ -488,11 +589,13 @@ export default function PortfolioPage() {
                 <thead className="bg-gray-800">
                   <tr>
                     <th className="p-3 text-left">Symbol</th>
+                    <th className="p-3 text-left">Asset</th>
                     <th className="p-3 text-left">Type</th>
                     <th className="p-3 text-right">Entry Date</th>
-                    <th className="p-3 text-right">Entry Price</th>
-                    <th className="p-3 text-right">Shares</th>
-                    <th className="p-3 text-right">Current/Exit Price</th>
+                    <th className="p-3 text-right">Details</th>
+                    <th className="p-3 text-right">Quantity</th>
+                    <th className="p-3 text-right">Entry/Premium</th>
+                    <th className="p-3 text-right">Current/Exit</th>
                     <th className="p-3 text-right">P&L</th>
                     <th className="p-3 text-right">P&L %</th>
                     <th className="p-3 text-center">Status</th>
@@ -501,19 +604,71 @@ export default function PortfolioPage() {
                 </thead>
                 <tbody>
                   {filteredTrades.map((trade) => {
-                    const currentPrice = trade.status === 'open'
-                      ? (stockPrices[trade.symbol] || trade.entryPrice)
-                      : (trade.exitPrice || trade.entryPrice);
+                    let pnl = 0;
+                    let pnlPercent = 0;
+                    let currentValue = 0;
+                    let entryValue = 0;
+                    let details = '';
+                    let quantity = '';
 
-                    const pnl = trade.type === 'long'
-                      ? (currentPrice - trade.entryPrice) * trade.shares
-                      : (trade.entryPrice - currentPrice) * trade.shares;
+                    if (trade.assetType === 'stock' && trade.entryPrice && trade.shares) {
+                      const currentPrice = trade.status === 'open'
+                        ? (stockPrices[trade.symbol] || trade.entryPrice)
+                        : (trade.exitPrice || trade.entryPrice);
 
-                    const pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+                      currentValue = currentPrice;
+                      entryValue = trade.entryPrice;
+                      details = 'Stock';
+                      quantity = `${trade.shares} shares`;
+
+                      pnl = trade.type === 'long'
+                        ? (currentPrice - trade.entryPrice) * trade.shares
+                        : (trade.entryPrice - currentPrice) * trade.shares;
+                      pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+                    } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
+                      const currentPremium = trade.status === 'open'
+                        ? trade.premium // Would fetch live premium in production
+                        : (trade.exitPremium || trade.premium);
+
+                      currentValue = currentPremium;
+                      entryValue = trade.premium;
+                      details = `${trade.optionType} $${trade.strikePrice} ${new Date(trade.expirationDate || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                      quantity = `${trade.contracts} contracts`;
+
+                      if (trade.status === 'closed' && trade.exitPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.exitPremium - trade.premium) * trade.contracts * 100
+                          : (trade.premium - trade.exitPremium) * trade.contracts * 100;
+                        pnlPercent = ((trade.exitPremium - trade.premium) / trade.premium) * 100;
+                      }
+                    } else if (trade.assetType === 'multi-leg') {
+                      details = trade.strategyType || 'Multi-Leg';
+                      quantity = `${trade.legs?.length || 0} legs`;
+                      entryValue = trade.netPremium || 0;
+                      currentValue = trade.status === 'closed' ? (trade.exitPremium || 0) : entryValue;
+
+                      if (trade.status === 'closed' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.exitPremium - trade.netPremium) * 100
+                          : (trade.netPremium - trade.exitPremium) * 100;
+                        if (trade.netPremium !== 0) {
+                          pnlPercent = ((trade.exitPremium - trade.netPremium) / Math.abs(trade.netPremium)) * 100;
+                        }
+                      }
+                    }
 
                     return (
                       <tr key={trade.id} className="border-t border-gray-800 hover:bg-gray-800/50">
                         <td className="p-3 font-medium">{trade.symbol}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            trade.assetType === 'stock' ? 'bg-blue-900/30 text-blue-400' :
+                            trade.assetType === 'option' ? 'bg-purple-900/30 text-purple-400' :
+                            'bg-orange-900/30 text-orange-400'
+                          }`}>
+                            {trade.assetType.toUpperCase()}
+                          </span>
+                        </td>
                         <td className="p-3">
                           <span className={`px-2 py-1 rounded text-xs ${
                             trade.type === 'long' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
@@ -522,15 +677,18 @@ export default function PortfolioPage() {
                           </span>
                         </td>
                         <td className="p-3 text-right text-sm">{new Date(trade.entryDate).toLocaleDateString()}</td>
-                        <td className="p-3 text-right">${trade.entryPrice.toFixed(2)}</td>
-                        <td className="p-3 text-right">{trade.shares}</td>
+                        <td className="p-3 text-right text-xs">{details}</td>
+                        <td className="p-3 text-right text-sm">{quantity}</td>
                         <td className="p-3 text-right">
-                          {trade.status === 'open' && stockPrices[trade.symbol] ? (
-                            <span className={currentPrice >= trade.entryPrice ? 'text-green-400' : 'text-red-400'}>
-                              ${currentPrice.toFixed(2)}
+                          ${trade.assetType === 'stock' ? entryValue.toFixed(2) : entryValue.toFixed(2)}
+                        </td>
+                        <td className="p-3 text-right">
+                          {trade.status === 'open' ? (
+                            <span className={trade.assetType === 'stock' && stockPrices[trade.symbol] && currentValue >= entryValue ? 'text-green-400' : trade.assetType === 'stock' && stockPrices[trade.symbol] ? 'text-red-400' : ''}>
+                              ${currentValue.toFixed(2)}
                             </span>
                           ) : (
-                            <span>${currentPrice.toFixed(2)}</span>
+                            <span>${currentValue.toFixed(2)}</span>
                           )}
                         </td>
                         <td className="p-3 text-right">
@@ -555,8 +713,9 @@ export default function PortfolioPage() {
                             {trade.status === 'open' && (
                               <button
                                 onClick={() => {
-                                  const price = prompt(`Enter exit price for ${trade.symbol}:`, currentPrice.toFixed(2));
-                                  if (price) handleCloseTrade(trade.id, parseFloat(price));
+                                  const label = trade.assetType === 'stock' ? 'price' : 'premium';
+                                  const value = prompt(`Enter exit ${label} for ${trade.symbol}:`, currentValue.toFixed(2));
+                                  if (value) handleCloseTrade(trade.id, parseFloat(value));
                                 }}
                                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-all"
                                 title="Close Trade"
@@ -609,6 +768,19 @@ export default function PortfolioPage() {
               </div>
 
               <div>
+                <label className="text-sm text-gray-400 mb-1 block">Asset Type *</label>
+                <select
+                  value={newTrade.assetType}
+                  onChange={(e) => setNewTrade({ ...newTrade, assetType: e.target.value as 'stock' | 'option' | 'multi-leg' })}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="stock">Stock</option>
+                  <option value="option">Single Option</option>
+                  <option value="multi-leg">Multi-Leg Strategy</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="text-sm text-gray-400 mb-1 block">Symbol *</label>
                 <input
                   type="text"
@@ -620,7 +792,7 @@ export default function PortfolioPage() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-400 mb-1 block">Type</label>
+                <label className="text-sm text-gray-400 mb-1 block">Position Type</label>
                 <select
                   value={newTrade.type}
                   onChange={(e) => setNewTrade({ ...newTrade, type: e.target.value as 'long' | 'short' })}
@@ -631,30 +803,114 @@ export default function PortfolioPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm text-gray-400 mb-1 block">Entry Price *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="100.00"
-                    value={newTrade.entryPrice}
-                    onChange={(e) => setNewTrade({ ...newTrade, entryPrice: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                </div>
+              {/* Stock-specific fields */}
+              {newTrade.assetType === 'stock' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-gray-400 mb-1 block">Entry Price *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="100.00"
+                      value={newTrade.entryPrice}
+                      onChange={(e) => setNewTrade({ ...newTrade, entryPrice: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
 
+                  <div>
+                    <label className="text-sm text-gray-400 mb-1 block">Shares *</label>
+                    <input
+                      type="number"
+                      placeholder="100"
+                      value={newTrade.shares}
+                      onChange={(e) => setNewTrade({ ...newTrade, shares: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Option-specific fields */}
+              {newTrade.assetType === 'option' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Option Type *</label>
+                      <select
+                        value={newTrade.optionType}
+                        onChange={(e) => setNewTrade({ ...newTrade, optionType: e.target.value as 'CALL' | 'PUT' })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="CALL">CALL</option>
+                        <option value="PUT">PUT</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Strike Price *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="150.00"
+                        value={newTrade.strikePrice}
+                        onChange={(e) => setNewTrade({ ...newTrade, strikePrice: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Expiration Date *</label>
+                      <input
+                        type="date"
+                        value={newTrade.expirationDate}
+                        onChange={(e) => setNewTrade({ ...newTrade, expirationDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Contracts *</label>
+                      <input
+                        type="number"
+                        placeholder="10"
+                        value={newTrade.contracts}
+                        onChange={(e) => setNewTrade({ ...newTrade, contracts: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-gray-400 mb-1 block">Premium (per contract) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="5.50"
+                      value={newTrade.premium}
+                      onChange={(e) => setNewTrade({ ...newTrade, premium: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Multi-leg strategy fields */}
+              {newTrade.assetType === 'multi-leg' && (
                 <div>
-                  <label className="text-sm text-gray-400 mb-1 block">Shares *</label>
+                  <label className="text-sm text-gray-400 mb-1 block">Strategy Type</label>
                   <input
-                    type="number"
-                    placeholder="100"
-                    value={newTrade.shares}
-                    onChange={(e) => setNewTrade({ ...newTrade, shares: e.target.value })}
+                    type="text"
+                    placeholder="Iron Condor, Bull Put Spread, etc."
+                    value={newTrade.strategyType}
+                    onChange={(e) => setNewTrade({ ...newTrade, strategyType: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
+                  <p className="text-xs text-gray-500 mt-1">Multi-leg strategies coming soon - use single options for now</p>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="text-sm text-gray-400 mb-1 block">Entry Date</label>
