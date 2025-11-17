@@ -1366,12 +1366,17 @@ export default function PortfolioPage() {
                                     <div className="flex gap-2 items-center">
                                       <input
                                         type="number"
-                                        value={trade.currentPremium ?? trade.premium ?? ''}
-                                        onChange={(e) => {
-                                          const newPremium = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                          setTrades(trades.map(t =>
-                                            t.id === trade.id ? { ...t, currentPremium: newPremium } : t
-                                          ));
+                                        key={`premium-${trade.id}`}
+                                        defaultValue={trade.currentPremium ?? trade.premium ?? ''}
+                                        onInput={(e) => {
+                                          // Update immediately as user types for live P&L
+                                          const input = e.target as HTMLInputElement;
+                                          const newPremium = input.value === '' ? undefined : parseFloat(input.value);
+                                          if (!isNaN(newPremium as number) || newPremium === undefined) {
+                                            setTrades(trades.map(t =>
+                                              t.id === trade.id ? { ...t, currentPremium: newPremium } : t
+                                            ));
+                                          }
                                         }}
                                         className={`flex-1 bg-gray-900 border-2 rounded px-3 py-2 text-white font-medium ${
                                           pnl === 0 ? 'border-yellow-500 text-lg' : 'border-gray-700'
