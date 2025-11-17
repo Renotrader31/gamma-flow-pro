@@ -19,10 +19,46 @@ const getTypeColor = (type: string) => {
   return 'text-blue-400';
 };
 
+// Calculate the third Friday of a given month
+const getThirdFriday = (year: number, month: number): Date => {
+  const firstDay = new Date(year, month, 1);
+  const firstFriday = firstDay.getDay() <= 5
+    ? 1 + (5 - firstDay.getDay())
+    : 1 + (12 - firstDay.getDay());
+  // Third Friday is 14 days after the first Friday
+  return new Date(year, month, firstFriday + 14);
+};
+
+// Get the next valid options expiration date (3rd Friday of month)
+const getNextExpirationDate = (weeksOut: number): Date => {
+  const today = new Date();
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + (weeksOut * 7));
+
+  // Find the 3rd Friday of the target month
+  let expiryDate = getThirdFriday(targetDate.getFullYear(), targetDate.getMonth());
+
+  // If that date has passed, get next month's 3rd Friday
+  if (expiryDate < today) {
+    const nextMonth = targetDate.getMonth() + 1;
+    const nextYear = nextMonth > 11 ? targetDate.getFullYear() + 1 : targetDate.getFullYear();
+    expiryDate = getThirdFriday(nextYear, nextMonth % 12);
+  }
+
+  // If we need multiple months out, keep advancing
+  while (expiryDate < targetDate) {
+    const nextMonth = expiryDate.getMonth() + 1;
+    const nextYear = nextMonth > 11 ? expiryDate.getFullYear() + 1 : expiryDate.getFullYear();
+    expiryDate = getThirdFriday(nextYear, nextMonth % 12);
+  }
+
+  return expiryDate;
+};
+
 const getExpiryDate = (daysOut: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + daysOut);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const weeksOut = Math.ceil(daysOut / 7);
+  const expiryDate = getNextExpirationDate(weeksOut);
+  return expiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
 const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
