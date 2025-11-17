@@ -1204,7 +1204,8 @@ export default function PortfolioPage() {
                     }
 
                     return (
-                      <tr key={trade.id} className="border-t border-gray-800 hover:bg-gray-800/50">
+                      <React.Fragment key={trade.id}>
+                      <tr className="border-t border-gray-800 hover:bg-gray-800/50">
                         <td className="p-3 font-medium">{trade.symbol}</td>
                         <td className="p-3">
                           <span className={`px-2 py-1 rounded text-xs ${
@@ -1486,6 +1487,7 @@ export default function PortfolioPage() {
                           </td>
                         </tr>
                       )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
