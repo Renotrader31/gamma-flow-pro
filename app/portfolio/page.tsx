@@ -327,10 +327,10 @@ export default function PortfolioPage() {
         optionType: 'CALL' as 'CALL' | 'PUT',
         strikePrice: '',
         expirationDate: '',
-        premium: '',
         contracts: ''
       }
     ],
+    netPremium: '', // Net premium for the entire multi-leg strategy
     notes: ''
   });
 
@@ -625,21 +625,12 @@ export default function PortfolioPage() {
           optionType: leg.optionType,
           strikePrice: parseFloat(leg.strikePrice),
           expirationDate: leg.expirationDate,
-          premium: parseFloat(leg.premium || '0'),
+          premium: 0, // Individual leg premium not tracked, using netPremium instead
           contracts: parseFloat(leg.contracts || '1')
         }));
 
-      // Calculate net premium
-      let netPremium = 0;
-      trade.legs.forEach(leg => {
-        const legPremium = leg.premium * leg.contracts;
-        if (leg.action === 'BUY') {
-          netPremium -= legPremium;
-        } else {
-          netPremium += legPremium;
-        }
-      });
-      trade.netPremium = netPremium;
+      // Use the net premium entered by user
+      trade.netPremium = parseFloat(newTrade.netPremium || '0');
     }
 
     setTrades([...trades, trade]);
@@ -664,9 +655,9 @@ export default function PortfolioPage() {
         optionType: 'CALL',
         strikePrice: '',
         expirationDate: '',
-        premium: '',
         contracts: '1'
       }],
+      netPremium: '',
       notes: ''
     });
     setShowAddTrade(false);
@@ -1877,7 +1868,7 @@ export default function PortfolioPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-5 gap-3">
+                      <div className="grid grid-cols-4 gap-3">
                         <div>
                           <label className="text-xs text-gray-400 mb-1 block">Action</label>
                           <select
@@ -1927,22 +1918,6 @@ export default function PortfolioPage() {
                         </div>
 
                         <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Premium</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="5.50"
-                            value={leg.premium}
-                            onChange={(e) => {
-                              const newLegs = [...newTrade.legs];
-                              newLegs[index].premium = e.target.value;
-                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
-                            }}
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
-                          />
-                        </div>
-
-                        <div>
                           <label className="text-xs text-gray-400 mb-1 block">Contracts</label>
                           <input
                             type="number"
@@ -1974,6 +1949,30 @@ export default function PortfolioPage() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Net Premium for entire spread */}
+                  <div className="bg-blue-900/10 p-4 rounded border-2 border-blue-600/50">
+                    <label className="text-sm text-blue-400 font-bold mb-2 block">
+                      💰 Net Premium (Total for entire {strategyTemplates[newTrade.strategyType]?.name})
+                    </label>
+                    <div className="flex gap-3 items-center">
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g., 0.72 for a debit spread or -0.72 for a credit spread"
+                        value={newTrade.netPremium}
+                        onChange={(e) => setNewTrade({ ...newTrade, netPremium: e.target.value })}
+                        className="flex-1 px-4 py-3 bg-gray-800 text-white text-lg font-medium rounded border-2 border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="text-xs text-gray-400">
+                        <div>Positive = Debit (you pay)</div>
+                        <div>Negative = Credit (you receive)</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                      Enter the total premium for the entire spread (e.g., BUY 41C, SELL 43C for 0.72 total)
+                    </div>
+                  </div>
                 </div>
               )}
 
