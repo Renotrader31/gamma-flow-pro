@@ -47,6 +47,20 @@ interface Trade {
   status: 'open' | 'closed';
   notes?: string;
   broker?: 'FIDELITY' | 'TDA' | 'WEDBUSH' | 'MANUAL';
+
+  // Exit Strategy fields
+  exitStrategyEnabled?: boolean;
+  stopLoss?: number;
+  stopLossPercent?: number;
+  takeProfit1?: number;
+  takeProfit1Percent?: number;
+  takeProfit2?: number;
+  takeProfit2Percent?: number;
+  takeProfit3?: number;
+  takeProfit3Percent?: number;
+  maxProfit?: number; // For spreads
+  maxLoss?: number; // For spreads
+  riskRewardRatio?: number;
 }
 
 interface Portfolio {
@@ -75,6 +89,92 @@ const formatNumber = (num: number) => {
   return `$${num.toFixed(2)}`;
 };
 
+// Calculate max profit and max loss for multi-leg strategies
+const calculateMaxProfitLoss = (trade: Trade) => {
+  if (trade.assetType !== 'multi-leg' || !trade.legs || trade.legs.length === 0) {
+    return { maxProfit: null, maxLoss: null };
+  }
+
+  // For credit spreads (net credit received)
+  const netPremium = trade.netPremium || 0;
+
+  // Calculate max profit and loss based on strategy type
+  const strikes = trade.legs.map(leg => leg.strikePrice).sort((a, b) => a - b);
+  const widthBetweenStrikes = strikes[strikes.length - 1] - strikes[0];
+
+  // For most spreads:
+  // Max Profit = Net Credit (for credit spreads) or Width - Net Debit (for debit spreads)
+  // Max Loss = Width - Net Credit (for credit spreads) or Net Debit (for debit spreads)
+
+  if (netPremium > 0) {
+    // Credit spread: collected premium
+    return {
+      maxProfit: netPremium * 100, // Premium is per share, multiply by 100
+      maxLoss: (widthBetweenStrikes - netPremium) * 100
+    };
+  } else {
+    // Debit spread: paid premium
+    return {
+      maxProfit: (widthBetweenStrikes + netPremium) * 100,
+      maxLoss: Math.abs(netPremium) * 100
+    };
+  }
+};
+
+// Auto-generate exit targets based on 1:2 risk/reward ratio
+const generateExitTargets = (trade: Trade) => {
+  let entryValue = 0;
+  let maxProfit = null;
+  let maxLoss = null;
+
+  // Calculate entry value based on asset type
+  if (trade.assetType === 'stock') {
+    entryValue = (trade.entryPrice || 0) * (trade.shares || 0);
+  } else if (trade.assetType === 'option') {
+    entryValue = (trade.premium || 0) * (trade.contracts || 0) * 100;
+  } else if (trade.assetType === 'multi-leg') {
+    const calc = calculateMaxProfitLoss(trade);
+    maxProfit = calc.maxProfit;
+    maxLoss = calc.maxLoss;
+    entryValue = Math.abs(trade.netPremium || 0) * 100;
+  }
+
+  // For multi-leg with defined risk, use max profit/loss
+  if (maxProfit !== null && maxLoss !== null) {
+    return {
+      stopLoss: -Math.abs(maxLoss),
+      stopLossPercent: maxLoss ? -(Math.abs(maxLoss) / entryValue) * 100 : -30,
+      takeProfit1: maxProfit * 0.5,
+      takeProfit1Percent: maxProfit ? (maxProfit * 0.5 / entryValue) * 100 : 50,
+      takeProfit2: maxProfit * 0.75,
+      takeProfit2Percent: maxProfit ? (maxProfit * 0.75 / entryValue) * 100 : 75,
+      takeProfit3: maxProfit,
+      takeProfit3Percent: maxProfit ? (maxProfit / entryValue) * 100 : 100,
+      maxProfit,
+      maxLoss,
+      riskRewardRatio: maxProfit && maxLoss ? maxProfit / Math.abs(maxLoss) : 2
+    };
+  }
+
+  // For stocks and single options: use 1:2 R/R
+  const riskAmount = entryValue * 0.3; // Risk 30% by default
+  const rewardAmount = riskAmount * 2; // 1:2 R/R
+
+  return {
+    stopLoss: -riskAmount,
+    stopLossPercent: -30,
+    takeProfit1: rewardAmount * 0.5,
+    takeProfit1Percent: 30,
+    takeProfit2: rewardAmount,
+    takeProfit2Percent: 60,
+    takeProfit3: rewardAmount * 1.5,
+    takeProfit3Percent: 90,
+    maxProfit: null,
+    maxLoss: -riskAmount,
+    riskRewardRatio: 2
+  };
+};
+
 export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -83,6 +183,7 @@ export default function PortfolioPage() {
   const [showAddTrade, setShowAddTrade] = useState(false);
   const [showAddPortfolio, setShowAddPortfolio] = useState(false);
   const [stockPrices, setStockPrices] = useState<{[key: string]: number}>({});
+  const [expandedExitStrategy, setExpandedExitStrategy] = useState<string | null>(null);
 
   // Popular symbols for quick entry
   const popularSymbols = [
@@ -587,6 +688,61 @@ export default function PortfolioPage() {
     if (confirm('Are you sure you want to delete this trade?')) {
       setTrades(trades.filter(t => t.id !== id));
     }
+  };
+
+  // Enable/initialize exit strategy with auto-calculated targets
+  const enableExitStrategy = (tradeId: string) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId && !t.exitStrategyEnabled) {
+        const targets = generateExitTargets(t);
+        return {
+          ...t,
+          exitStrategyEnabled: true,
+          ...targets
+        };
+      }
+      return t;
+    }));
+    setExpandedExitStrategy(tradeId);
+  };
+
+  // Update individual exit target
+  const updateExitTarget = (tradeId: string, field: string, value: number) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        return { ...t, [field]: value };
+      }
+      return t;
+    }));
+  };
+
+  // Partial close position
+  const handlePartialClose = (tradeId: string, percentage: number) => {
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade) return;
+
+    const confirmMsg = `Close ${percentage}% of this position?`;
+    if (!confirm(confirmMsg)) return;
+
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        // Reduce position size
+        if (t.assetType === 'stock' && t.shares) {
+          const remainingShares = t.shares * (1 - percentage / 100);
+          return { ...t, shares: remainingShares };
+        } else if (t.assetType === 'option' && t.contracts) {
+          const remainingContracts = t.contracts * (1 - percentage / 100);
+          return { ...t, contracts: remainingContracts };
+        } else if (t.assetType === 'multi-leg' && t.legs) {
+          const updatedLegs = t.legs.map(leg => ({
+            ...leg,
+            contracts: leg.contracts * (1 - percentage / 100)
+          }));
+          return { ...t, legs: updatedLegs };
+        }
+      }
+      return t;
+    }));
   };
 
   const handleClearAll = () => {
@@ -1101,17 +1257,34 @@ export default function PortfolioPage() {
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             {trade.status === 'open' && (
-                              <button
-                                onClick={() => {
-                                  const label = trade.assetType === 'stock' ? 'price' : 'premium';
-                                  const value = prompt(`Enter exit ${label} for ${trade.symbol}:`, currentValue.toFixed(2));
-                                  if (value) handleCloseTrade(trade.id, parseFloat(value));
-                                }}
-                                className="p-1 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-all"
-                                title="Close Trade"
-                              >
-                                <Target className="w-4 h-4" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (trade.exitStrategyEnabled) {
+                                      setExpandedExitStrategy(expandedExitStrategy === trade.id ? null : trade.id);
+                                    } else {
+                                      enableExitStrategy(trade.id);
+                                    }
+                                  }}
+                                  className={`p-1 hover:bg-purple-900/20 rounded transition-all ${
+                                    trade.exitStrategyEnabled ? 'text-purple-400 hover:text-purple-300' : 'text-gray-500 hover:text-purple-400'
+                                  }`}
+                                  title="Exit Strategy"
+                                >
+                                  <Activity className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const label = trade.assetType === 'stock' ? 'price' : 'premium';
+                                    const value = prompt(`Enter exit ${label} for ${trade.symbol}:`, currentValue.toFixed(2));
+                                    if (value) handleCloseTrade(trade.id, parseFloat(value));
+                                  }}
+                                  className="p-1 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-all"
+                                  title="Close Trade"
+                                >
+                                  <Target className="w-4 h-4" />
+                                </button>
+                              </>
                             )}
                             <button
                               onClick={() => handleDeleteTrade(trade.id)}
@@ -1123,6 +1296,196 @@ export default function PortfolioPage() {
                           </div>
                         </td>
                       </tr>
+
+                      {/* Exit Strategy Row (Expandable) */}
+                      {trade.status === 'open' && trade.exitStrategyEnabled && expandedExitStrategy === trade.id && (
+                        <tr className="border-t border-gray-800 bg-gray-900/50">
+                          <td colSpan={11} className="p-4">
+                            <div className="bg-gray-800/50 rounded-lg p-4 border border-purple-700/30">
+                              <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-lg font-bold text-purple-400">🎯 Exit Strategy</h4>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 25)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 25%
+                                  </button>
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 50)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 50%
+                                  </button>
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 75)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 75%
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Current P&L Status */}
+                              <div className="mb-4 p-3 bg-gray-900 rounded border border-gray-700">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-400">Current P&L:</span>
+                                  <span className={`text-xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatNumber(pnl)} ({pnl >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                                  </span>
+                                </div>
+                                {trade.maxProfit && trade.maxLoss && (
+                                  <div className="mt-2 flex justify-between text-sm">
+                                    <span className="text-gray-500">Max Profit: <span className="text-green-400">${trade.maxProfit.toFixed(2)}</span></span>
+                                    <span className="text-gray-500">Max Loss: <span className="text-red-400">${Math.abs(trade.maxLoss).toFixed(2)}</span></span>
+                                    <span className="text-gray-500">R:R: <span className="text-purple-400">{trade.riskRewardRatio?.toFixed(2)}</span></span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Visual Progress Bar */}
+                              <div className="mb-4">
+                                <div className="relative h-8 bg-gray-700 rounded-full overflow-hidden">
+                                  {/* Stop Loss Zone */}
+                                  <div className="absolute left-0 top-0 h-full w-1/4 bg-red-600/30"></div>
+                                  {/* Break Even */}
+                                  <div className="absolute left-1/4 top-0 h-full w-px bg-gray-400"></div>
+                                  {/* Target Zones */}
+                                  <div className="absolute left-1/4 top-0 h-full w-1/4 bg-yellow-600/20"></div>
+                                  <div className="absolute left-2/4 top-0 h-full w-1/4 bg-green-600/30"></div>
+                                  <div className="absolute right-0 top-0 h-full w-1/4 bg-green-600/50"></div>
+
+                                  {/* Current Position Indicator */}
+                                  {(() => {
+                                    const stopLoss = trade.stopLoss || 0;
+                                    const tp3 = trade.takeProfit3 || 0;
+                                    const range = tp3 - stopLoss;
+                                    const position = range !== 0 ? ((pnl - stopLoss) / range) * 100 : 50;
+                                    const clampedPosition = Math.max(0, Math.min(100, position));
+
+                                    return (
+                                      <div
+                                        className="absolute top-0 h-full w-1 bg-white shadow-lg"
+                                        style={{ left: `${clampedPosition}%` }}
+                                      >
+                                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-bold text-white whitespace-nowrap">
+                                          YOU
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                  <span>Stop Loss</span>
+                                  <span>Break Even</span>
+                                  <span>TP1</span>
+                                  <span>TP2</span>
+                                  <span>TP3</span>
+                                </div>
+                              </div>
+
+                              {/* Editable Targets */}
+                              <div className="grid grid-cols-4 gap-3">
+                                {/* Stop Loss */}
+                                <div className="bg-red-900/10 p-3 rounded border border-red-700/30">
+                                  <label className="text-xs text-red-400 font-semibold mb-1 block">🛡️ Stop Loss</label>
+                                  <input
+                                    type="number"
+                                    value={trade.stopLoss?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'stopLoss', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.stopLossPercent?.toFixed(1)}%</div>
+                                  {pnl <= (trade.stopLoss || 0) && (
+                                    <div className="text-xs text-red-400 font-bold mt-1">❌ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 1 */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 TP1 (50%)</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit1?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit1', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit1Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit1 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 2 */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 TP2 (75%)</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit2?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit2', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit2Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit2 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 3 / Max */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 {trade.maxProfit ? 'Max' : 'TP3'}</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit3?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit3', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit3Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit3 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Suggested Action */}
+                              {(() => {
+                                let suggestion = '';
+                                let suggestionColor = 'text-gray-400';
+
+                                if (pnl <= (trade.stopLoss || 0)) {
+                                  suggestion = '⚠️ Stop loss hit - Consider exiting to limit losses';
+                                  suggestionColor = 'text-red-400';
+                                } else if (pnl >= (trade.takeProfit3 || 0)) {
+                                  suggestion = '🎉 Max profit reached - Take profit or trail stop tight';
+                                  suggestionColor = 'text-green-400';
+                                } else if (pnl >= (trade.takeProfit2 || 0)) {
+                                  suggestion = '💰 TP2 hit - Consider taking 75% off, trail rest';
+                                  suggestionColor = 'text-green-400';
+                                } else if (pnl >= (trade.takeProfit1 || 0)) {
+                                  suggestion = '💡 TP1 hit - Consider taking 50% off, move stop to breakeven';
+                                  suggestionColor = 'text-yellow-400';
+                                } else if (pnl > 0) {
+                                  suggestion = '📊 In profit - Hold for targets or trail stop';
+                                  suggestionColor = 'text-blue-400';
+                                } else {
+                                  suggestion = '⏳ Waiting for price action...';
+                                  suggestionColor = 'text-gray-400';
+                                }
+
+                                return (
+                                  <div className={`mt-4 p-3 bg-gray-900 rounded border border-gray-700 ${suggestionColor} font-medium text-sm`}>
+                                    {suggestion}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     );
                   })}
                 </tbody>
