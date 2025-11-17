@@ -1366,9 +1366,9 @@ export default function PortfolioPage() {
                                     <div className="flex gap-2 items-center">
                                       <input
                                         type="number"
-                                        value={trade.currentPremium?.toFixed(2) || trade.premium?.toFixed(2) || ''}
+                                        value={trade.currentPremium ?? trade.premium ?? ''}
                                         onChange={(e) => {
-                                          const newPremium = parseFloat(e.target.value);
+                                          const newPremium = e.target.value === '' ? undefined : parseFloat(e.target.value);
                                           setTrades(trades.map(t =>
                                             t.id === trade.id ? { ...t, currentPremium: newPremium } : t
                                           ));
