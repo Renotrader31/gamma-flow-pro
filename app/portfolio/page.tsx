@@ -1355,9 +1355,13 @@ export default function PortfolioPage() {
 
                                 {/* Current Premium Editor for Options */}
                                 {(trade.assetType === 'option' || trade.assetType === 'multi-leg') && (
-                                  <div className="mb-3 p-2 bg-gray-800 rounded border border-blue-700/30">
-                                    <label className="text-xs text-blue-400 font-semibold mb-1 block">
-                                      💱 Update Current Premium (for P&L tracking)
+                                  <div className={`mb-3 p-3 bg-gray-800 rounded border-2 ${
+                                    pnl === 0 ? 'border-yellow-500 animate-pulse' : 'border-blue-700/30'
+                                  }`}>
+                                    <label className={`text-sm font-bold mb-2 block ${
+                                      pnl === 0 ? 'text-yellow-400' : 'text-blue-400'
+                                    }`}>
+                                      💱 {pnl === 0 ? 'UPDATE CURRENT PREMIUM TO START →' : 'Update Current Premium (for P&L tracking)'}
                                     </label>
                                     <div className="flex gap-2 items-center">
                                       <input
@@ -1369,17 +1373,25 @@ export default function PortfolioPage() {
                                             t.id === trade.id ? { ...t, currentPremium: newPremium } : t
                                           ));
                                         }}
-                                        className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                                        className={`flex-1 bg-gray-900 border-2 rounded px-3 py-2 text-white font-medium ${
+                                          pnl === 0 ? 'border-yellow-500 text-lg' : 'border-gray-700'
+                                        }`}
                                         step="0.01"
-                                        placeholder="Enter current premium"
+                                        placeholder="Enter current premium from your broker"
                                       />
-                                      <span className="text-xs text-gray-500">
-                                        Entry: ${(trade.premium || trade.netPremium || 0).toFixed(2)}
+                                      <span className="text-sm text-gray-400 whitespace-nowrap">
+                                        Entry: <span className="text-white font-medium">${(trade.premium || trade.netPremium || 0).toFixed(2)}</span>
                                       </span>
                                     </div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      Update this manually to track real-time P&L and targets
-                                    </div>
+                                    {pnl === 0 ? (
+                                      <div className="text-xs text-yellow-400 mt-2 font-semibold">
+                                        ⚡ Check your broker and enter the current option value above to activate exit tracking
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        Update this from your broker to track real-time P&L and targets
+                                      </div>
+                                    )}
                                   </div>
                                 )}
 
@@ -1505,7 +1517,11 @@ export default function PortfolioPage() {
                                 let suggestion = '';
                                 let suggestionColor = 'text-gray-400';
 
-                                if (pnl <= (trade.stopLoss || 0)) {
+                                // Special case: If P&L is exactly $0 and it's an option, prompt to update premium
+                                if (pnl === 0 && (trade.assetType === 'option' || trade.assetType === 'multi-leg')) {
+                                  suggestion = '💱 Update Current Premium above to start tracking P&L and targets';
+                                  suggestionColor = 'text-blue-400';
+                                } else if (pnl <= (trade.stopLoss || 0)) {
                                   suggestion = '⚠️ Stop loss hit - Consider exiting to limit losses';
                                   suggestionColor = 'text-red-400';
                                 } else if (pnl >= (trade.takeProfit3 || 0)) {
