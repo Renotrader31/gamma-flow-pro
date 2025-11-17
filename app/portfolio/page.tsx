@@ -36,6 +36,7 @@ interface Trade {
   expirationDate?: string;
   premium?: number;
   contracts?: number;
+  currentPremium?: number; // Current market premium for open options
 
   // Multi-leg strategy fields
   strategyType?: string;
@@ -1173,7 +1174,7 @@ export default function PortfolioPage() {
                       pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
                     } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
                       const currentPremium = trade.status === 'open'
-                        ? trade.premium
+                        ? (trade.currentPremium || trade.premium)
                         : (trade.exitPremium || trade.premium);
 
                       currentValue = currentPremium;
@@ -1181,7 +1182,13 @@ export default function PortfolioPage() {
                       details = `${trade.optionType} $${trade.strikePrice} ${new Date(trade.expirationDate || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
                       quantity = `${trade.contracts} contracts`;
 
-                      if (trade.status === 'closed' && trade.exitPremium !== undefined) {
+                      // Calculate P&L for both open and closed options
+                      if (trade.status === 'open' && trade.currentPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.currentPremium - trade.premium) * trade.contracts * 100
+                          : (trade.premium - trade.currentPremium) * trade.contracts * 100;
+                        pnlPercent = ((trade.currentPremium - trade.premium) / trade.premium) * 100;
+                      } else if (trade.status === 'closed' && trade.exitPremium !== undefined) {
                         pnl = trade.type === 'long'
                           ? (trade.exitPremium - trade.premium) * trade.contracts * 100
                           : (trade.premium - trade.exitPremium) * trade.contracts * 100;
@@ -1191,9 +1198,19 @@ export default function PortfolioPage() {
                       details = trade.strategyType || 'Multi-Leg';
                       quantity = `${trade.legs?.length || 0} legs`;
                       entryValue = trade.netPremium || 0;
-                      currentValue = trade.status === 'closed' ? (trade.exitPremium || 0) : entryValue;
+                      currentValue = trade.status === 'closed'
+                        ? (trade.exitPremium || 0)
+                        : (trade.currentPremium || trade.netPremium || 0);
 
-                      if (trade.status === 'closed' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
+                      // Calculate P&L for both open and closed multi-leg
+                      if (trade.status === 'open' && trade.currentPremium !== undefined && trade.netPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.currentPremium - trade.netPremium) * 100
+                          : (trade.netPremium - trade.currentPremium) * 100;
+                        if (trade.netPremium !== 0) {
+                          pnlPercent = ((trade.currentPremium - trade.netPremium) / Math.abs(trade.netPremium)) * 100;
+                        }
+                      } else if (trade.status === 'closed' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
                         pnl = trade.type === 'long'
                           ? (trade.exitPremium - trade.netPremium) * 100
                           : (trade.netPremium - trade.exitPremium) * 100;
@@ -1329,12 +1346,43 @@ export default function PortfolioPage() {
 
                               {/* Current P&L Status */}
                               <div className="mb-4 p-3 bg-gray-900 rounded border border-gray-700">
-                                <div className="flex justify-between items-center">
+                                <div className="flex justify-between items-center mb-3">
                                   <span className="text-gray-400">Current P&L:</span>
                                   <span className={`text-xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                     {formatNumber(pnl)} ({pnl >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
                                   </span>
                                 </div>
+
+                                {/* Current Premium Editor for Options */}
+                                {(trade.assetType === 'option' || trade.assetType === 'multi-leg') && (
+                                  <div className="mb-3 p-2 bg-gray-800 rounded border border-blue-700/30">
+                                    <label className="text-xs text-blue-400 font-semibold mb-1 block">
+                                      💱 Update Current Premium (for P&L tracking)
+                                    </label>
+                                    <div className="flex gap-2 items-center">
+                                      <input
+                                        type="number"
+                                        value={trade.currentPremium?.toFixed(2) || trade.premium?.toFixed(2) || ''}
+                                        onChange={(e) => {
+                                          const newPremium = parseFloat(e.target.value);
+                                          setTrades(trades.map(t =>
+                                            t.id === trade.id ? { ...t, currentPremium: newPremium } : t
+                                          ));
+                                        }}
+                                        className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                                        step="0.01"
+                                        placeholder="Enter current premium"
+                                      />
+                                      <span className="text-xs text-gray-500">
+                                        Entry: ${(trade.premium || trade.netPremium || 0).toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      Update this manually to track real-time P&L and targets
+                                    </div>
+                                  </div>
+                                )}
+
                                 {trade.maxProfit && trade.maxLoss && (
                                   <div className="mt-2 flex justify-between text-sm">
                                     <span className="text-gray-500">Max Profit: <span className="text-green-400">${trade.maxProfit.toFixed(2)}</span></span>
