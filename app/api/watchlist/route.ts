@@ -61,7 +61,7 @@ async function fetchPolygonCandles(
 
     console.log(`Fetching ${symbol} ${multiplier}${timespan} data from Polygon...`);
 
-    const response = await fetch(url);
+    const response = await fetch(url, { cache: 'no-store' });
     const data = await response.json();
 
     if (data.status === 'OK' && data.results && data.results.length > 0) {
