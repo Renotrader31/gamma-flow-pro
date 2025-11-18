@@ -82,8 +82,39 @@ async function fetchOptionsDataForSymbol(symbol: string) {
   }
 }
 
+// Calculate max pain - strike where option writers lose least money
+function calculateMaxPain(optionsByStrike: Map<number, any>, currentPrice: number) {
+  if (optionsByStrike.size === 0) return currentPrice
+
+  let maxPainStrike = currentPrice
+  let minPain = Infinity
+
+  optionsByStrike.forEach((data, strike) => {
+    let pain = 0
+
+    // Calculate loss for call writers if stock closes at this strike
+    optionsByStrike.forEach((strikeData, otherStrike) => {
+      if (strike > otherStrike) {
+        // Calls are ITM - call writers lose money
+        pain += (strike - otherStrike) * strikeData.callOI * 100
+      }
+      if (strike < otherStrike) {
+        // Puts are ITM - put writers lose money
+        pain += (otherStrike - strike) * strikeData.putOI * 100
+      }
+    })
+
+    if (pain < minPain) {
+      minPain = pain
+      maxPainStrike = strike
+    }
+  })
+
+  return maxPainStrike
+}
+
 // Calculate gamma exposure and options metrics from options chain
-function calculateOptionsMetrics(optionsData: any) {
+function calculateOptionsMetrics(optionsData: any, currentPrice: number = 0) {
   if (!optionsData || !Array.isArray(optionsData)) {
     return null
   }
@@ -98,6 +129,7 @@ function calculateOptionsMetrics(optionsData: any) {
   let totalPutPremium = 0
 
   const strikes: number[] = []
+  const optionsByStrike = new Map<number, any>()
 
   optionsData.forEach((option: any) => {
     const isCall = option.details?.contract_type === 'call'
@@ -107,7 +139,20 @@ function calculateOptionsMetrics(optionsData: any) {
     const price = option.day?.close || option.last_quote?.midpoint || 0
     const strike = option.details?.strike_price || 0
 
-    if (strike) strikes.push(strike)
+    if (strike) {
+      strikes.push(strike)
+
+      // Group by strike for max pain calculation
+      if (!optionsByStrike.has(strike)) {
+        optionsByStrike.set(strike, { callOI: 0, putOI: 0 })
+      }
+      const strikeData = optionsByStrike.get(strike)
+      if (isCall) {
+        strikeData.callOI += oi
+      } else {
+        strikeData.putOI += oi
+      }
+    }
 
     // Calculate gamma exposure (gamma * OI * 100 shares per contract)
     const gammaExposure = gamma * oi * 100
@@ -139,6 +184,31 @@ function calculateOptionsMetrics(optionsData: any) {
   // Net premium flow
   const netPremium = totalCallPremium - totalPutPremium
 
+  // Calculate max pain
+  const maxPain = calculateMaxPain(optionsByStrike, currentPrice)
+
+  // Calculate unusual activity metrics
+  const totalVolume = totalCallVolume + totalPutVolume
+  const totalPremium = Math.abs(netPremium)
+
+  // Unusual activity score (0-100)
+  // High score = unusual options activity
+  let unusualScore = 0
+
+  // Factor 1: High absolute premium flow (>$10M = very unusual)
+  if (totalPremium > 10000000) unusualScore += 40
+  else if (totalPremium > 5000000) unusualScore += 30
+  else if (totalPremium > 1000000) unusualScore += 20
+
+  // Factor 2: High options volume relative to typical activity (>50K contracts)
+  if (totalVolume > 100000) unusualScore += 30
+  else if (totalVolume > 50000) unusualScore += 20
+  else if (totalVolume > 20000) unusualScore += 10
+
+  // Factor 3: Extreme put/call imbalance (directional bet)
+  if (putCallRatio > 2.0 || putCallRatio < 0.5) unusualScore += 30
+  else if (putCallRatio > 1.5 || putCallRatio < 0.67) unusualScore += 15
+
   return {
     gex: Math.abs(netGEX),
     netGEX,
@@ -148,7 +218,10 @@ function calculateOptionsMetrics(optionsData: any) {
     totalCallVolume,
     totalPutVolume,
     optionVolume: totalCallVolume + totalPutVolume,
-    strikes: strikes.sort((a, b) => a - b)
+    strikes: strikes.sort((a, b) => a - b),
+    maxPain,
+    maxPainDistance: currentPrice > 0 ? ((maxPain - currentPrice) / currentPrice * 100) : 0,
+    unusualActivity: Math.min(100, unusualScore)
   }
 }
 
@@ -220,7 +293,7 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
 
           // Use the fetched options data
           const optionsData = optionsResults[index]
-          const optionsMetrics = calculateOptionsMetrics(optionsData)
+          const optionsMetrics = calculateOptionsMetrics(optionsData, price)
 
         // Calculate gamma levels from options strikes if available
         let gammaLevels = {
@@ -269,6 +342,9 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
             netPremium: optionsMetrics?.netPremium || 0,
             darkPoolRatio: 0, // Removed random data - requires dark pool feed
             optionVolume: optionsMetrics?.optionVolume || 0,
+            maxPain: optionsMetrics?.maxPain || price,
+            maxPainDistance: optionsMetrics?.maxPainDistance || 0,
+            unusualActivity: optionsMetrics?.unusualActivity || 0,
             gammaLevels
           })
         }

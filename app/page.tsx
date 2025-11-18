@@ -290,8 +290,30 @@ export default function Home() {
     }, 1000)
     return () => clearInterval(timer)
   }, [])
-  
-  // Scanner strategies with better filtering
+
+  // Market-cap-adjusted threshold helpers
+  const getGEXThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 50000000  // Mega-cap: $50M+ GEX
+    if (marketCap > 50000000000) return 20000000   // Large-cap: $20M+ GEX
+    if (marketCap > 10000000000) return 5000000    // Mid-cap: $5M+ GEX
+    return 1000000 // Small-cap: $1M+ GEX
+  }
+
+  const getPremiumThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 10000000  // Mega-cap: $10M+ premium
+    if (marketCap > 50000000000) return 5000000    // Large-cap: $5M+ premium
+    if (marketCap > 10000000000) return 1000000    // Mid-cap: $1M+ premium
+    return 500000 // Small-cap: $500K+ premium
+  }
+
+  const getOptionVolumeThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 50000  // Mega-cap: 50K+ contracts
+    if (marketCap > 50000000000) return 20000   // Large-cap: 20K+ contracts
+    if (marketCap > 10000000000) return 5000    // Mid-cap: 5K+ contracts
+    return 2000 // Small-cap: 2K+ contracts
+  }
+
+  // Scanner strategies with market-cap-adjusted filtering
   const scannerStrategies = [
     {
       id: 'gammaSqueezer',
@@ -308,24 +330,31 @@ export default function Home() {
     {
       id: 'institutionalFlow',
       name: 'Institutional Flow',
-      description: 'Large premium flow indicating institutional activity',
+      description: 'Large premium flow indicating institutional activity (market-cap adjusted)',
       icon: Building2,
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 10 && s.netPremium && Math.abs(s.netPremium) > 1000000 && s.optionVolume > 5000)
+        .filter(s => {
+          const premiumThreshold = getPremiumThreshold(s.marketCap || 0)
+          const volumeThreshold = getOptionVolumeThreshold(s.marketCap || 0)
+          return s.price > 10 && s.netPremium && Math.abs(s.netPremium) > premiumThreshold && s.optionVolume > volumeThreshold
+        })
         .sort((a, b) => Math.abs(b.netPremium || 0) - Math.abs(a.netPremium || 0))
         .slice(0, 20)
     },
     {
       id: 'portfolioDefensive',
       name: 'Portfolio Defensive',
-      description: 'Conservative blue-chip stocks with options activity',
+      description: 'Conservative blue-chip stocks with options activity (market-cap adjusted)',
       icon: Briefcase,
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 20 && s.marketCap > 10000000000 && s.gex > 1000000 && Math.abs(s.changePercent || 0) < 3)
+        .filter(s => {
+          const gexThreshold = getGEXThreshold(s.marketCap || 0)
+          return s.price > 20 && s.marketCap > 10000000000 && s.gex > gexThreshold && Math.abs(s.changePercent || 0) < 3
+        })
         .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
         .slice(0, 20)
     },
@@ -344,25 +373,29 @@ export default function Home() {
     {
       id: 'optionsWhale',
       name: 'Options Whale',
-      description: 'Massive options volume with high GEX',
+      description: 'Massive options volume with high GEX (market-cap adjusted)',
       icon: Activity,
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 5 && s.optionVolume > 5000 && s.gex > 5000000)
+        .filter(s => {
+          const gexThreshold = getGEXThreshold(s.marketCap || 0)
+          const volumeThreshold = getOptionVolumeThreshold(s.marketCap || 0)
+          return s.price > 5 && s.optionVolume > volumeThreshold && s.gex > gexThreshold
+        })
         .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
     {
-      id: 'ivCrush',
-      name: 'IV Crush Play',
-      description: 'High IV rank for premium selling',
+      id: 'unusualActivity',
+      name: 'Unusual Activity',
+      description: 'Stocks with unusual options flow and volume',
       icon: Gauge,
       color: 'text-red-400',
       bgColor: 'bg-red-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 15 && s.ivRank && s.ivRank > 70 && s.volume > 500000)
-        .sort((a, b) => (b.ivRank || 0) - (a.ivRank || 0))
+        .filter(s => s.price > 5 && s.unusualActivity && s.unusualActivity > 50)
+        .sort((a, b) => (b.unusualActivity || 0) - (a.unusualActivity || 0))
         .slice(0, 20)
     },
     {
