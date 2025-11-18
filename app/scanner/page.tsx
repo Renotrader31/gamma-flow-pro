@@ -3,11 +3,11 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft, Radio, PlayCircle, Settings, Activity, TrendingUp, TrendingDown,
-  Zap, Clock, Target, Eye, RefreshCw, Briefcase, Sparkles
+  Zap, Clock, Target, Eye, RefreshCw, Briefcase, Sparkles, Droplets
 } from 'lucide-react';
 import { AITradeIdeas } from '../components/AITradeIdeas';
 
-type ScanMode = 'intraday' | 'swing' | 'longterm';
+type ScanMode = 'intraday' | 'swing' | 'longterm' | 'liquidity';
 
 interface ScanResult {
   symbol: string;
@@ -56,6 +56,16 @@ const modeConfigs = {
     icon: Briefcase,
     color: 'text-green-400',
     bgColor: 'bg-green-900/20'
+  },
+  liquidity: {
+    name: 'Liquidity Hunter',
+    description: 'FVG detection, Order Flow analysis, Liquidity Zones',
+    interval: 120,
+    targets: ['High liquidity stocks', 'FVG opportunities', 'Institutional accumulation'],
+    strategies: ['Fair Value Gaps', 'Order Flow pressure', 'Liquidity Zone plays'],
+    icon: Droplets,
+    color: 'text-cyan-400',
+    bgColor: 'bg-cyan-900/20'
   }
 };
 
@@ -266,6 +276,65 @@ export default function InstitutionalScanner() {
             if (stock.price > 30 && stock.marketCap > 5000000000) {
               score += 8;
               signals.push('Quality Stock');
+            }
+          } else if (mode === 'liquidity') {
+            // Liquidity Hunter: Focus on FVG, order flow, and liquidity zones
+            if (stock.liquidity) {
+              // Liquidity Score (0-100)
+              score += (stock.liquidity.liquidityScore || 0) * 0.3; // Up to 30 points
+
+              // Fair Value Gaps
+              if (stock.liquidity.activeFVGCount > 0) {
+                score += 10;
+                signals.push(`${stock.liquidity.activeFVGCount} FVG Active`);
+              }
+
+              // Liquidity Zones (most important)
+              if (stock.liquidity.liquidityZoneCount > 0) {
+                score += 20;
+                signals.push(`${stock.liquidity.liquidityZoneCount} Liquidity Zone${stock.liquidity.liquidityZoneCount > 1 ? 's' : ''}`);
+              }
+
+              // Order Flow
+              if (stock.liquidity.isSignificantBuying) {
+                score += 15;
+                signals.push('🟢 Strong Buying');
+              } else if (stock.liquidity.isSignificantSelling) {
+                score += 15;
+                signals.push('🔴 Strong Selling');
+              }
+
+              // Delta strength
+              const deltaRatio = Math.abs(stock.liquidity.delta) / (stock.liquidity.avgAbsDelta || 1);
+              if (deltaRatio > 2) {
+                score += 10;
+                signals.push('Extreme Delta');
+              } else if (deltaRatio > 1.5) {
+                score += 5;
+                signals.push('High Delta');
+              }
+
+              // Bullish vs Bearish FVGs
+              if (stock.liquidity.bullishFVGCount > stock.liquidity.bearishFVGCount) {
+                signals.push(`Bullish FVG ${stock.liquidity.bullishFVGCount}/${stock.liquidity.bearishFVGCount}`);
+              } else if (stock.liquidity.bearishFVGCount > stock.liquidity.bullishFVGCount) {
+                signals.push(`Bearish FVG ${stock.liquidity.bearishFVGCount}/${stock.liquidity.bullishFVGCount}`);
+              }
+
+              // Add any active liquidity signals
+              if (stock.liquidity.liquiditySignals && stock.liquidity.liquiditySignals.length > 0) {
+                signals.push(...stock.liquidity.liquiditySignals);
+              }
+            } else {
+              // No liquidity data available - penalize score
+              score -= 20;
+              signals.push('No Liquidity Data');
+            }
+
+            // Volume still matters
+            if (stock.volume > 20000000) {
+              score += 10;
+              signals.push('High Volume');
             }
           }
 
