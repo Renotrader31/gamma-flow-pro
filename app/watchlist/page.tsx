@@ -339,6 +339,7 @@ export default function WatchlistScanner() {
                 <thead className="bg-gray-800">
                   <tr>
                     <th className="p-3 text-left">Symbol</th>
+                    <th className="p-3 text-right">Price</th>
                     <th className="p-3 text-center">Aligned</th>
                     <th className="p-3 text-center">Combined Score</th>
                     <th className="p-3 text-left">5-Min Action</th>
@@ -354,6 +355,12 @@ export default function WatchlistScanner() {
                       <tr className="border-t border-gray-800 hover:bg-gray-800/50">
                         <td className="p-3">
                           <div className="font-bold text-lg">{result.symbol}</div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="font-medium">${result.daily.currentPrice.toFixed(2)}</div>
+                          <div className={`text-xs ${result.daily.priceChangePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {result.daily.priceChangePercent >= 0 ? '+' : ''}{result.daily.priceChangePercent.toFixed(2)}%
+                          </div>
                         </td>
                         <td className="p-3 text-center">
                           {result.aligned ? (
@@ -404,7 +411,7 @@ export default function WatchlistScanner() {
                       {/* Expanded Details */}
                       {expandedRow === result.symbol && (
                         <tr className="border-t border-gray-800 bg-gray-800/30">
-                          <td colSpan={8} className="p-6">
+                          <td colSpan={9} className="p-6">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                               {/* 5-Min Details */}
                               <div>

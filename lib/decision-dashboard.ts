@@ -30,6 +30,11 @@ export interface IndicatorResult {
   timeframe: string;
   timestamp: number;
 
+  // Price data for verification
+  currentPrice: number;
+  priceChange: number;
+  priceChangePercent: number;
+
   // Main outputs
   action: string;
   direction: number; // 1 = long, -1 = short, 0 = neutral
@@ -549,11 +554,20 @@ export function calculateDecisionDashboard(
   const idx = candles.length - 1;
   const lastCandle = candles[idx];
 
+  // Calculate price change
+  const currentPrice = lastCandle.close;
+  const previousClose = idx > 0 ? candles[idx - 1].close : lastCandle.open;
+  const priceChange = currentPrice - previousClose;
+  const priceChangePercent = previousClose > 0 ? (priceChange / previousClose) * 100 : 0;
+
   // Initialize result
   const result: IndicatorResult = {
     symbol,
     timeframe,
     timestamp: lastCandle.timestamp,
+    currentPrice,
+    priceChange,
+    priceChangePercent,
     action: 'WAIT',
     direction: 0,
     alignmentScore: 0,
