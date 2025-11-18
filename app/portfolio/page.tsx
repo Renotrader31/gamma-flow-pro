@@ -1,0 +1,2153 @@
+'use client'
+import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import {
+  ArrowLeft, Plus, Trash2, TrendingUp, TrendingDown, Download, Upload,
+  Filter, Calendar, DollarSign, Percent, Target, Activity, Eye, Edit, X, FileUp
+} from 'lucide-react';
+import { parseCSV, ParsedTrade } from '@/lib/csv-parsers';
+
+interface OptionLeg {
+  legId: string;
+  action: 'BUY' | 'SELL';
+  optionType: 'CALL' | 'PUT';
+  strikePrice: number;
+  expirationDate: string;
+  premium: number;
+  contracts: number;
+}
+
+interface Trade {
+  id: string;
+  portfolioId: string;
+  symbol: string;
+  assetType: 'stock' | 'option' | 'multi-leg';
+  type: 'long' | 'short';
+  entryDate: string;
+
+  // Stock fields
+  entryPrice?: number;
+  shares?: number;
+  exitPrice?: number;
+
+  // Single option fields
+  optionType?: 'CALL' | 'PUT';
+  strikePrice?: number;
+  expirationDate?: string;
+  premium?: number;
+  contracts?: number;
+  currentPremium?: number; // Current market premium for open options
+
+  // Multi-leg strategy fields
+  strategyType?: string;
+  legs?: OptionLeg[];
+  netPremium?: number;
+
+  exitDate?: string;
+  exitPremium?: number;
+  status: 'open' | 'closed';
+  notes?: string;
+  broker?: 'FIDELITY' | 'TDA' | 'WEDBUSH' | 'MANUAL';
+
+  // Exit Strategy fields
+  exitStrategyEnabled?: boolean;
+  stopLoss?: number;
+  stopLossPercent?: number;
+  takeProfit1?: number;
+  takeProfit1Percent?: number;
+  takeProfit2?: number;
+  takeProfit2Percent?: number;
+  takeProfit3?: number;
+  takeProfit3Percent?: number;
+  maxProfit?: number; // For spreads
+  maxLoss?: number; // For spreads
+  riskRewardRatio?: number;
+}
+
+interface Portfolio {
+  id: string;
+  name: string;
+  createdAt: string;
+  broker?: 'FIDELITY' | 'TDA' | 'WEDBUSH' | 'ALL' | 'MANUAL';
+}
+
+interface StrategyTemplate {
+  name: string;
+  legs: number;
+  description: string;
+  template?: Array<{
+    action: 'BUY' | 'SELL';
+    optionType: 'CALL' | 'PUT';
+    strikeOffset: number;
+    quantity?: number;
+  }>;
+}
+
+const formatNumber = (num: number) => {
+  if (!num && num !== 0) return '$0.00';
+  if (Math.abs(num) >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+  if (Math.abs(num) >= 1e3) return `$${(num / 1e3).toFixed(2)}K`;
+  return `$${num.toFixed(2)}`;
+};
+
+// Calculate max profit and max loss for multi-leg strategies
+const calculateMaxProfitLoss = (trade: Trade) => {
+  if (trade.assetType !== 'multi-leg' || !trade.legs || trade.legs.length === 0) {
+    return { maxProfit: null, maxLoss: null };
+  }
+
+  // For credit spreads (net credit received)
+  const netPremium = trade.netPremium || 0;
+
+  // Calculate max profit and loss based on strategy type
+  const strikes = trade.legs.map(leg => leg.strikePrice).sort((a, b) => a - b);
+  const widthBetweenStrikes = strikes[strikes.length - 1] - strikes[0];
+
+  // For most spreads:
+  // Max Profit = Net Credit (for credit spreads) or Width - Net Debit (for debit spreads)
+  // Max Loss = Width - Net Credit (for credit spreads) or Net Debit (for debit spreads)
+
+  if (netPremium > 0) {
+    // Credit spread: collected premium
+    return {
+      maxProfit: netPremium * 100, // Premium is per share, multiply by 100
+      maxLoss: (widthBetweenStrikes - netPremium) * 100
+    };
+  } else {
+    // Debit spread: paid premium
+    return {
+      maxProfit: (widthBetweenStrikes + netPremium) * 100,
+      maxLoss: Math.abs(netPremium) * 100
+    };
+  }
+};
+
+// Auto-generate exit targets based on 1:2 risk/reward ratio
+const generateExitTargets = (trade: Trade) => {
+  let entryValue = 0;
+  let maxProfit = null;
+  let maxLoss = null;
+
+  // Calculate entry value based on asset type
+  if (trade.assetType === 'stock') {
+    entryValue = (trade.entryPrice || 0) * (trade.shares || 0);
+  } else if (trade.assetType === 'option') {
+    entryValue = (trade.premium || 0) * (trade.contracts || 0) * 100;
+  } else if (trade.assetType === 'multi-leg') {
+    const calc = calculateMaxProfitLoss(trade);
+    maxProfit = calc.maxProfit;
+    maxLoss = calc.maxLoss;
+    entryValue = Math.abs(trade.netPremium || 0) * 100;
+  }
+
+  // For multi-leg with defined risk, use max profit/loss
+  if (maxProfit !== null && maxLoss !== null) {
+    return {
+      stopLoss: -Math.abs(maxLoss),
+      stopLossPercent: maxLoss ? -(Math.abs(maxLoss) / entryValue) * 100 : -30,
+      takeProfit1: maxProfit * 0.5,
+      takeProfit1Percent: maxProfit ? (maxProfit * 0.5 / entryValue) * 100 : 50,
+      takeProfit2: maxProfit * 0.75,
+      takeProfit2Percent: maxProfit ? (maxProfit * 0.75 / entryValue) * 100 : 75,
+      takeProfit3: maxProfit,
+      takeProfit3Percent: maxProfit ? (maxProfit / entryValue) * 100 : 100,
+      maxProfit,
+      maxLoss,
+      riskRewardRatio: maxProfit && maxLoss ? maxProfit / Math.abs(maxLoss) : 2
+    };
+  }
+
+  // For stocks and single options: use 1:2 R/R
+  const riskAmount = entryValue * 0.3; // Risk 30% by default
+  const rewardAmount = riskAmount * 2; // 1:2 R/R
+
+  return {
+    stopLoss: -riskAmount,
+    stopLossPercent: -30,
+    takeProfit1: rewardAmount * 0.5,
+    takeProfit1Percent: 30,
+    takeProfit2: rewardAmount,
+    takeProfit2Percent: 60,
+    takeProfit3: rewardAmount * 1.5,
+    takeProfit3Percent: 90,
+    maxProfit: null,
+    maxLoss: -riskAmount,
+    riskRewardRatio: 2
+  };
+};
+
+export default function PortfolioPage() {
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'open' | 'closed'>('all');
+  const [showAddTrade, setShowAddTrade] = useState(false);
+  const [showAddPortfolio, setShowAddPortfolio] = useState(false);
+  const [stockPrices, setStockPrices] = useState<{[key: string]: number}>({});
+  const [expandedExitStrategy, setExpandedExitStrategy] = useState<string | null>(null);
+
+  // Popular symbols for quick entry
+  const popularSymbols = [
+    'AAPL', 'TSLA', 'NVDA', 'AMD', 'SPY', 'QQQ', 'META', 'AMZN',
+    'GOOGL', 'MSFT', 'NFLX', 'PLTR', 'SOFI', 'RIVN', 'NIO'
+  ];
+
+  // Strategy templates
+  const strategyTemplates: { [key: string]: StrategyTemplate } = {
+    SINGLE: {
+      name: 'Single Option',
+      legs: 1,
+      description: 'Buy or sell a single call or put'
+    },
+    CALL_SPREAD: {
+      name: 'Bull Call Spread',
+      legs: 2,
+      description: 'Buy call at lower strike, sell call at higher strike',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    PUT_SPREAD: {
+      name: 'Bull Put Spread',
+      legs: 2,
+      description: 'Sell put at higher strike, buy put at lower strike (bullish)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    BEAR_CALL_SPREAD: {
+      name: 'Bear Call Spread',
+      legs: 2,
+      description: 'Sell call at lower strike, buy call at higher strike (bearish)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    BEAR_PUT_SPREAD: {
+      name: 'Bear Put Spread',
+      legs: 2,
+      description: 'Buy put at higher strike, sell put at lower strike (bearish)',
+      template: [
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 5 },
+        { action: 'SELL', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    STRADDLE: {
+      name: 'Long Straddle',
+      legs: 2,
+      description: 'Buy call and put at same strike (volatility play)',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: 0 }
+      ]
+    },
+    STRANGLE: {
+      name: 'Long Strangle',
+      legs: 2,
+      description: 'Buy call and put at different strikes',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: -5 }
+      ]
+    },
+    IRON_CONDOR: {
+      name: 'Iron Condor',
+      legs: 4,
+      description: 'Sell call spread + sell put spread (range-bound)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: -10 },
+        { action: 'BUY', optionType: 'PUT', strikeOffset: -15 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 10 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 15 }
+      ]
+    },
+    BUTTERFLY: {
+      name: 'Butterfly Spread',
+      legs: 3,
+      description: 'Buy 1 ITM call + Sell 2 ATM calls + Buy 1 OTM call',
+      template: [
+        { action: 'BUY', optionType: 'CALL', strikeOffset: -5 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0, quantity: 2 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    },
+    JADE_LIZARD: {
+      name: 'Jade Lizard',
+      legs: 3,
+      description: 'Sell put + sell call spread (no upside risk)',
+      template: [
+        { action: 'SELL', optionType: 'PUT', strikeOffset: -5 },
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 5 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 10 }
+      ]
+    },
+    CALENDAR_SPREAD: {
+      name: 'Calendar Spread',
+      legs: 2,
+      description: 'Sell near-term option, buy longer-term option (same strike)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 0 }
+      ]
+    },
+    DIAGONAL_SPREAD: {
+      name: 'Diagonal Spread',
+      legs: 2,
+      description: 'Sell near-term option, buy longer-term option (different strikes)',
+      template: [
+        { action: 'SELL', optionType: 'CALL', strikeOffset: 0 },
+        { action: 'BUY', optionType: 'CALL', strikeOffset: 5 }
+      ]
+    }
+  };
+
+  const [newTrade, setNewTrade] = useState({
+    portfolioId: '',
+    symbol: '',
+    assetType: 'stock' as 'stock' | 'option' | 'multi-leg',
+    type: 'long' as 'long' | 'short',
+    entryDate: new Date().toISOString().split('T')[0],
+    strategyType: 'SINGLE',
+    // Stock fields
+    entryPrice: '',
+    shares: '',
+    // Option fields
+    optionType: 'CALL' as 'CALL' | 'PUT',
+    strikePrice: '',
+    expirationDate: '',
+    premium: '',
+    contracts: '',
+    // Multi-leg fields
+    legs: [
+      {
+        action: 'BUY' as 'BUY' | 'SELL',
+        optionType: 'CALL' as 'CALL' | 'PUT',
+        strikePrice: '',
+        expirationDate: '',
+        contracts: ''
+      }
+    ],
+    netPremium: '', // Net premium for the entire multi-leg strategy
+    notes: ''
+  });
+
+  const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [showImportCSV, setShowImportCSV] = useState(false);
+  const [selectedBroker, setSelectedBroker] = useState<'FIDELITY' | 'TDA' | 'WEDBUSH'>('FIDELITY');
+  const [importStatus, setImportStatus] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load data from localStorage
+  useEffect(() => {
+    const savedPortfolios = localStorage.getItem('gamma-flow-portfolios');
+    const savedTrades = localStorage.getItem('gamma-flow-trades');
+
+    if (savedPortfolios) {
+      const parsed = JSON.parse(savedPortfolios);
+      // Ensure broker portfolios exist
+      const brokerPortfolios = ensureBrokerPortfolios(parsed);
+      setPortfolios(brokerPortfolios);
+      localStorage.setItem('gamma-flow-portfolios', JSON.stringify(brokerPortfolios));
+    } else {
+      const defaultPortfolios = createDefaultBrokerPortfolios();
+      setPortfolios(defaultPortfolios);
+      localStorage.setItem('gamma-flow-portfolios', JSON.stringify(defaultPortfolios));
+    }
+
+    if (savedTrades) {
+      setTrades(JSON.parse(savedTrades));
+    }
+  }, []);
+
+  // Create default broker portfolios
+  const createDefaultBrokerPortfolios = (): Portfolio[] => {
+    const now = new Date().toISOString();
+    return [
+      { id: 'all', name: 'All Accounts', createdAt: now, broker: 'ALL' },
+      { id: 'fidelity', name: 'Fidelity', createdAt: now, broker: 'FIDELITY' },
+      { id: 'tda', name: 'Think or Swim', createdAt: now, broker: 'TDA' },
+      { id: 'wedbush', name: 'Wedbush', createdAt: now, broker: 'WEDBUSH' }
+    ];
+  };
+
+  // Ensure broker portfolios exist in the list
+  const ensureBrokerPortfolios = (existingPortfolios: Portfolio[]): Portfolio[] => {
+    const now = new Date().toISOString();
+    const brokerIds = ['all', 'fidelity', 'tda', 'wedbush'];
+    const existing = new Set(existingPortfolios.map(p => p.id));
+
+    const defaultBrokers = createDefaultBrokerPortfolios();
+    const missing = defaultBrokers.filter(p => !existing.has(p.id));
+
+    return [...missing, ...existingPortfolios];
+  };
+
+  // Save trades to localStorage
+  useEffect(() => {
+    if (trades.length > 0 || localStorage.getItem('gamma-flow-trades')) {
+      localStorage.setItem('gamma-flow-trades', JSON.stringify(trades));
+    }
+  }, [trades]);
+
+  // Save portfolios to localStorage
+  useEffect(() => {
+    if (portfolios.length > 0) {
+      localStorage.setItem('gamma-flow-portfolios', JSON.stringify(portfolios));
+    }
+  }, [portfolios]);
+
+  // Fetch current prices for open positions
+  useEffect(() => {
+    const fetchPrices = async () => {
+      const openTrades = trades.filter(t => t.status === 'open');
+      if (openTrades.length === 0) return;
+
+      try {
+        const response = await fetch('/api/stocks');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.data) {
+          const prices: {[key: string]: number} = {};
+          data.data.forEach((stock: any) => {
+            prices[stock.symbol] = stock.price;
+          });
+          setStockPrices(prices);
+        }
+      } catch (error) {
+        console.error('Error fetching prices:', error);
+      }
+    };
+
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 30000);
+    return () => clearInterval(interval);
+  }, [trades]);
+
+  // Quick symbol selection
+  const selectSymbol = (symbol: string) => {
+    setNewTrade(prev => ({ ...prev, symbol }));
+  };
+
+  // Change strategy type
+  const changeStrategyType = (newStrategyType: string) => {
+    const template = strategyTemplates[newStrategyType];
+    if (template?.template) {
+      setNewTrade(prev => ({
+        ...prev,
+        strategyType: newStrategyType,
+        assetType: 'multi-leg',
+        legs: template.template!.map(leg => ({
+          action: leg.action,
+          optionType: leg.optionType,
+          strikePrice: '',
+          expirationDate: '',
+          premium: '',
+          contracts: (leg.quantity || 1).toString()
+        }))
+      }));
+    } else {
+      setNewTrade(prev => ({
+        ...prev,
+        strategyType: newStrategyType,
+        legs: [{
+          action: 'BUY',
+          optionType: 'CALL',
+          strikePrice: '',
+          expirationDate: '',
+          premium: '',
+          contracts: '1'
+        }]
+      }));
+    }
+  };
+
+  const handleAddPortfolio = () => {
+    if (!newPortfolioName.trim()) {
+      alert('Please enter a portfolio name');
+      return;
+    }
+
+    const portfolio: Portfolio = {
+      id: Date.now().toString(),
+      name: newPortfolioName,
+      createdAt: new Date().toISOString(),
+      broker: 'MANUAL'
+    };
+
+    setPortfolios([...portfolios, portfolio]);
+
+    // Auto-select the new portfolio in the trade form
+    setNewTrade(prev => ({ ...prev, portfolioId: portfolio.id }));
+
+    setNewPortfolioName('');
+    setShowAddPortfolio(false);
+
+    // Reopen Add Trade modal if it was open before
+    setShowAddTrade(true);
+  };
+
+  // Handle CSV Import
+  const handleCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportStatus('Reading file...');
+
+    try {
+      const text = await file.text();
+      setImportStatus('Parsing trades...');
+
+      // Parse CSV with selected broker format
+      const parsedTrades = parseCSV(text, selectedBroker);
+
+      if (parsedTrades.length === 0) {
+        setImportStatus('No trades found in CSV');
+        return;
+      }
+
+      setImportStatus(`Found ${parsedTrades.length} trades. Importing...`);
+
+      // Get the broker portfolio
+      const brokerPortfolio = portfolios.find(p => p.broker === selectedBroker);
+      if (!brokerPortfolio) {
+        setImportStatus('Error: Broker portfolio not found');
+        return;
+      }
+
+      // Convert parsed trades to Trade objects
+      const newTrades: Trade[] = parsedTrades.map((pt: ParsedTrade) => {
+        const trade: Trade = {
+          id: `${Date.now()}-${Math.random()}`,
+          portfolioId: brokerPortfolio.id,
+          symbol: pt.symbol,
+          assetType: pt.assetType,
+          type: pt.position === 'LONG' ? 'long' : 'short',
+          entryDate: pt.date,
+          status: pt.status === 'CLOSED' || pt.status === 'EXPIRED' ? 'closed' : 'open',
+          broker: pt.broker,
+          notes: pt.rawAction || ''
+        };
+
+        // Add asset-specific fields
+        if (pt.assetType === 'stock') {
+          trade.entryPrice = pt.entryPrice;
+          trade.shares = pt.shares;
+        } else if (pt.assetType === 'option') {
+          trade.optionType = pt.optionType;
+          trade.strikePrice = pt.strikePrice;
+          trade.expirationDate = pt.expirationDate;
+          trade.premium = pt.premium;
+          trade.contracts = pt.contracts;
+        }
+
+        return trade;
+      });
+
+      // Add to existing trades
+      setTrades([...trades, ...newTrades]);
+      setImportStatus(`Successfully imported ${newTrades.length} trades!`);
+
+      // Auto-select the broker portfolio
+      setSelectedPortfolio(brokerPortfolio.id);
+
+      setTimeout(() => {
+        setShowImportCSV(false);
+        setImportStatus('');
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      setImportStatus(`Error: ${error instanceof Error ? error.message : 'Failed to import CSV'}`);
+    }
+  };
+
+  const handleAddTrade = () => {
+    if (!newTrade.symbol) {
+      alert('Please enter a symbol');
+      return;
+    }
+
+    // Validate based on asset type
+    if (newTrade.assetType === 'stock') {
+      if (!newTrade.entryPrice || !newTrade.shares) {
+        alert('Please fill in entry price and shares for stock trades');
+        return;
+      }
+    } else if (newTrade.assetType === 'option') {
+      if (!newTrade.strikePrice || !newTrade.expirationDate || !newTrade.premium || !newTrade.contracts) {
+        alert('Please fill in all option fields (strike, expiration, premium, contracts)');
+        return;
+      }
+    } else if (newTrade.assetType === 'multi-leg') {
+      const hasValidLeg = newTrade.legs.some(leg => leg.strikePrice && parseFloat(leg.strikePrice) > 0);
+      if (!hasValidLeg) {
+        alert('Please fill in at least one leg with valid strike price');
+        return;
+      }
+    }
+
+    const portfolioId = newTrade.portfolioId || portfolios[0]?.id || 'main';
+
+    const trade: Trade = {
+      id: Date.now().toString(),
+      portfolioId,
+      symbol: newTrade.symbol.toUpperCase(),
+      assetType: newTrade.assetType,
+      type: newTrade.type,
+      entryDate: newTrade.entryDate,
+      status: 'open',
+      notes: newTrade.notes
+    };
+
+    // Add asset-specific fields
+    if (newTrade.assetType === 'stock') {
+      trade.entryPrice = parseFloat(newTrade.entryPrice);
+      trade.shares = parseFloat(newTrade.shares);
+    } else if (newTrade.assetType === 'option') {
+      trade.optionType = newTrade.optionType;
+      trade.strikePrice = parseFloat(newTrade.strikePrice);
+      trade.expirationDate = newTrade.expirationDate;
+      trade.premium = parseFloat(newTrade.premium);
+      trade.contracts = parseFloat(newTrade.contracts);
+    } else if (newTrade.assetType === 'multi-leg') {
+      trade.strategyType = newTrade.strategyType;
+      trade.legs = newTrade.legs
+        .filter(leg => leg.strikePrice && parseFloat(leg.strikePrice) > 0)
+        .map((leg, index) => ({
+          legId: `${Date.now()}-${index}`,
+          action: leg.action,
+          optionType: leg.optionType,
+          strikePrice: parseFloat(leg.strikePrice),
+          expirationDate: leg.expirationDate,
+          premium: 0, // Individual leg premium not tracked, using netPremium instead
+          contracts: parseFloat(leg.contracts || '1')
+        }));
+
+      // Use the net premium entered by user
+      trade.netPremium = parseFloat(newTrade.netPremium || '0');
+    }
+
+    setTrades([...trades, trade]);
+
+    // Reset form
+    setNewTrade({
+      portfolioId: '',
+      symbol: '',
+      assetType: 'stock',
+      type: 'long',
+      entryDate: new Date().toISOString().split('T')[0],
+      strategyType: 'SINGLE',
+      entryPrice: '',
+      shares: '',
+      optionType: 'CALL',
+      strikePrice: '',
+      expirationDate: '',
+      premium: '',
+      contracts: '',
+      legs: [{
+        action: 'BUY',
+        optionType: 'CALL',
+        strikePrice: '',
+        expirationDate: '',
+        contracts: '1'
+      }],
+      netPremium: '',
+      notes: ''
+    });
+    setShowAddTrade(false);
+  };
+
+  const handleCloseTrade = (tradeId: string, exitValue: number) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        if (t.assetType === 'stock') {
+          return { ...t, status: 'closed' as const, exitDate: new Date().toISOString(), exitPrice: exitValue };
+        } else if (t.assetType === 'option' || t.assetType === 'multi-leg') {
+          return { ...t, status: 'closed' as const, exitDate: new Date().toISOString(), exitPremium: exitValue };
+        }
+      }
+      return t;
+    }));
+  };
+
+  const handleDeleteTrade = (id: string) => {
+    if (confirm('Are you sure you want to delete this trade?')) {
+      setTrades(trades.filter(t => t.id !== id));
+    }
+  };
+
+  // Enable/initialize exit strategy with auto-calculated targets
+  const enableExitStrategy = (tradeId: string) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId && !t.exitStrategyEnabled) {
+        const targets = generateExitTargets(t);
+        return {
+          ...t,
+          exitStrategyEnabled: true,
+          ...targets
+        };
+      }
+      return t;
+    }));
+    setExpandedExitStrategy(tradeId);
+  };
+
+  // Update individual exit target
+  const updateExitTarget = (tradeId: string, field: string, value: number) => {
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        return { ...t, [field]: value };
+      }
+      return t;
+    }));
+  };
+
+  // Partial close position
+  const handlePartialClose = (tradeId: string, percentage: number) => {
+    const trade = trades.find(t => t.id === tradeId);
+    if (!trade) return;
+
+    const confirmMsg = `Close ${percentage}% of this position?`;
+    if (!confirm(confirmMsg)) return;
+
+    setTrades(trades.map(t => {
+      if (t.id === tradeId) {
+        // Reduce position size
+        if (t.assetType === 'stock' && t.shares) {
+          const remainingShares = t.shares * (1 - percentage / 100);
+          return { ...t, shares: remainingShares };
+        } else if (t.assetType === 'option' && t.contracts) {
+          const remainingContracts = t.contracts * (1 - percentage / 100);
+          return { ...t, contracts: remainingContracts };
+        } else if (t.assetType === 'multi-leg' && t.legs) {
+          const updatedLegs = t.legs.map(leg => ({
+            ...leg,
+            contracts: leg.contracts * (1 - percentage / 100)
+          }));
+          return { ...t, legs: updatedLegs };
+        }
+      }
+      return t;
+    }));
+  };
+
+  const handleClearAll = () => {
+    if (confirm('Are you sure you want to clear all trades? This cannot be undone.')) {
+      setTrades([]);
+      localStorage.removeItem('gamma-flow-trades');
+    }
+  };
+
+  const handleOpenImportModal = () => {
+    setShowImportCSV(true);
+  };
+
+  const handleImportCSV_OLD = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event: any) => {
+        const csv = event.target.result;
+        const lines = csv.split('\n');
+        const importedTrades: Trade[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          const [symbol, assetType, type, entryDate, entryPrice, shares, exitDate, exitPrice, status, notes] = line.split(',');
+
+          if (symbol) {
+            const trade: Trade = {
+              id: Date.now().toString() + i,
+              portfolioId: portfolios[0]?.id || 'main',
+              symbol: symbol.trim(),
+              assetType: (assetType?.trim() as 'stock' | 'option' | 'multi-leg') || 'stock',
+              type: (type?.trim() as 'long' | 'short') || 'long',
+              entryDate: entryDate?.trim() || new Date().toISOString(),
+              status: (status?.trim() as 'open' | 'closed') || 'open',
+              notes: notes?.trim() || ''
+            };
+
+            if (trade.assetType === 'stock') {
+              trade.entryPrice = parseFloat(entryPrice);
+              trade.shares = parseFloat(shares);
+              if (exitPrice) trade.exitPrice = parseFloat(exitPrice);
+            }
+
+            if (exitDate) trade.exitDate = exitDate.trim();
+
+            importedTrades.push(trade);
+          }
+        }
+
+        if (importedTrades.length > 0) {
+          setTrades([...trades, ...importedTrades]);
+          alert(`Imported ${importedTrades.length} trades`);
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
+  const handleExportCSV = () => {
+    const csvContent = [
+      ['Symbol', 'Asset Type', 'Type', 'Entry Date', 'Entry Price/Premium', 'Shares/Contracts', 'Exit Date', 'Exit Price/Premium', 'Status', 'Notes'].join(','),
+      ...filteredTrades.map(t => {
+        const entryValue = t.assetType === 'stock' ? t.entryPrice : t.premium || t.netPremium;
+        const quantity = t.assetType === 'stock' ? t.shares : t.contracts;
+        const exitValue = t.assetType === 'stock' ? t.exitPrice : t.exitPremium;
+
+        return [
+          t.symbol,
+          t.assetType,
+          t.type,
+          t.entryDate,
+          entryValue || '',
+          quantity || '',
+          t.exitDate || '',
+          exitValue || '',
+          t.status,
+          t.notes || ''
+        ].join(',');
+      })
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gamma-flow-trades-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const calculateTradeStats = () => {
+    const portfolioTrades = selectedPortfolio === 'all'
+      ? trades
+      : trades.filter(t => t.portfolioId === selectedPortfolio);
+
+    let totalPnL = 0;
+    let realizedPnL = 0;
+    let unrealizedPnL = 0;
+    let wins = 0;
+    let losses = 0;
+    let totalWinAmount = 0;
+    let totalLossAmount = 0;
+
+    portfolioTrades.forEach(trade => {
+      let pnl = 0;
+
+      if (trade.status === 'closed') {
+        if (trade.assetType === 'stock' && trade.exitPrice && trade.entryPrice && trade.shares) {
+          pnl = trade.type === 'long'
+            ? (trade.exitPrice - trade.entryPrice) * trade.shares
+            : (trade.entryPrice - trade.exitPrice) * trade.shares;
+        } else if (trade.assetType === 'option' && trade.exitPremium !== undefined && trade.premium && trade.contracts) {
+          pnl = trade.type === 'long'
+            ? (trade.exitPremium - trade.premium) * trade.contracts * 100
+            : (trade.premium - trade.exitPremium) * trade.contracts * 100;
+        } else if (trade.assetType === 'multi-leg' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
+          pnl = trade.type === 'long'
+            ? (trade.exitPremium - trade.netPremium) * 100
+            : (trade.netPremium - trade.exitPremium) * 100;
+        }
+
+        realizedPnL += pnl;
+        totalPnL += pnl;
+
+        if (pnl > 0) {
+          wins++;
+          totalWinAmount += pnl;
+        } else if (pnl < 0) {
+          losses++;
+          totalLossAmount += Math.abs(pnl);
+        }
+      } else if (trade.status === 'open') {
+        if (trade.assetType === 'stock' && trade.entryPrice && trade.shares) {
+          const currentPrice = stockPrices[trade.symbol] || trade.entryPrice;
+          pnl = trade.type === 'long'
+            ? (currentPrice - trade.entryPrice) * trade.shares
+            : (trade.entryPrice - currentPrice) * trade.shares;
+        }
+
+        unrealizedPnL += pnl;
+        totalPnL += pnl;
+      }
+    });
+
+    const totalTrades = wins + losses;
+    const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+    const avgWin = wins > 0 ? totalWinAmount / wins : 0;
+    const avgLoss = losses > 0 ? totalLossAmount / losses : 0;
+    const sharpeRatio = totalTrades > 3 ? (totalPnL / totalTrades) / (Math.max(avgLoss, 1)) : 0;
+
+    const openPositions = portfolioTrades.filter(t => t.status === 'open').length;
+    const closedPositions = portfolioTrades.filter(t => t.status === 'closed').length;
+
+    return {
+      totalPnL,
+      realizedPnL,
+      unrealizedPnL,
+      winRate,
+      avgWin,
+      avgLoss,
+      sharpeRatio,
+      openPositions,
+      closedPositions,
+      totalTrades: portfolioTrades.length
+    };
+  };
+
+  const filteredTrades = trades.filter(t => {
+    if (selectedPortfolio !== 'all' && t.portfolioId !== selectedPortfolio) return false;
+    if (filterStatus !== 'all' && t.status !== filterStatus) return false;
+    return true;
+  });
+
+  const stats = calculateTradeStats();
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-3"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Scanner
+              </Link>
+              <h1 className="text-3xl font-bold mb-2 text-green-400">Portfolio Tracker</h1>
+              <div className="flex items-center gap-2 text-gray-400">
+                <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                <span className="font-medium text-green-400">
+                  Live P&L Tracking with Options Support
+                  {Object.keys(stockPrices).length > 0 && (
+                    <span className="text-xs bg-green-700 px-2 py-0.5 rounded ml-2">🔴 LIVE</span>
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleOpenImportModal}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+              >
+                <FileUp className="w-4 h-4" />
+                Import CSV
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 rounded-lg font-medium transition-all flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear All
+              </button>
+            </div>
+          </div>
+
+          {/* Portfolio Selector */}
+          <div className="flex gap-2 items-center mb-4">
+            <select
+              value={selectedPortfolio}
+              onChange={(e) => setSelectedPortfolio(e.target.value)}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+            >
+              {portfolios.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.broker === 'ALL' ? '📊 All Accounts' :
+                   p.broker === 'FIDELITY' ? '🏦 Fidelity' :
+                   p.broker === 'TDA' ? '📈 Think or Swim' :
+                   p.broker === 'WEDBUSH' ? '💼 Wedbush' :
+                   p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowAddPortfolio(true)}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              New Portfolio
+            </button>
+            <button
+              onClick={() => {
+                // Set portfolioId to currently selected portfolio when opening modal
+                // If "All Accounts" is selected, default to first broker portfolio
+                if (!newTrade.portfolioId) {
+                  const targetPortfolio = selectedPortfolio === 'all'
+                    ? portfolios.find(p => p.broker !== 'ALL')?.id || portfolios[0]?.id
+                    : selectedPortfolio;
+                  setNewTrade(prev => ({ ...prev, portfolioId: targetPortfolio }));
+                }
+                setShowAddTrade(true);
+              }}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add Trade
+            </button>
+          </div>
+        </div>
+
+        {/* Portfolio Performance Metrics */}
+        <div className="bg-gray-900 rounded-lg p-6 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-6">
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-green-400 mb-1">
+                <span className="text-lg">💰</span>
+                {Object.keys(stockPrices).length > 0 && <span className="text-xs">🔴</span>}
+              </div>
+              <div className="text-sm text-gray-400">Total P&L</div>
+              <div className={`text-xl font-bold ${stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${stats.totalPnL.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-blue-400 mb-1">
+                <span className="text-lg">💵</span>
+              </div>
+              <div className="text-sm text-gray-400">Realized P&L</div>
+              <div className={`text-xl font-bold ${stats.realizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${stats.realizedPnL.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-yellow-400 mb-1">
+                <span className="text-lg">🏆</span>
+              </div>
+              <div className="text-sm text-gray-400">Win Rate</div>
+              <div className="text-xl font-bold text-yellow-400">
+                {stats.winRate.toFixed(1)}%
+              </div>
+              <div className="text-xs text-gray-500">
+                {stats.closedPositions} closed
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-purple-400 mb-1">
+                <span className="text-lg">📊</span>
+              </div>
+              <div className="text-sm text-gray-400">Sharpe Ratio</div>
+              <div className="text-xl font-bold text-purple-400">
+                {stats.sharpeRatio.toFixed(2)}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-cyan-400 mb-1">
+                <span className="text-lg">📈</span>
+              </div>
+              <div className="text-sm text-gray-400">Active Positions</div>
+              <div className="text-xl font-bold text-cyan-400">
+                {stats.openPositions}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-orange-400 mb-1">
+                <span className="text-lg">⏳</span>
+              </div>
+              <div className="text-sm text-gray-400">Total Trades</div>
+              <div className="text-xl font-bold text-orange-400">
+                {stats.totalTrades}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filterStatus === 'all'
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            All ({trades.filter(t => selectedPortfolio === 'all' || t.portfolioId === selectedPortfolio).length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('open')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filterStatus === 'open'
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            Open ({stats.openPositions})
+          </button>
+          <button
+            onClick={() => setFilterStatus('closed')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              filterStatus === 'closed'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            Closed ({stats.closedPositions})
+          </button>
+        </div>
+
+        {/* Trades Table */}
+        {filteredTrades.length === 0 ? (
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-12 text-center">
+            <Activity className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+            <p className="text-gray-400">No trades found</p>
+            <p className="text-sm text-gray-500 mt-1">Add your first trade to get started</p>
+          </div>
+        ) : (
+          <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-800">
+                  <tr>
+                    <th className="p-3 text-left">Symbol</th>
+                    <th className="p-3 text-left">Asset</th>
+                    <th className="p-3 text-left">Type</th>
+                    <th className="p-3 text-right">Entry Date</th>
+                    <th className="p-3 text-right">Details</th>
+                    <th className="p-3 text-right">Quantity</th>
+                    <th className="p-3 text-right">Entry/Premium</th>
+                    <th className="p-3 text-right">Current/Exit</th>
+                    <th className="p-3 text-right">P&L</th>
+                    <th className="p-3 text-right">P&L %</th>
+                    <th className="p-3 text-center">Status</th>
+                    <th className="p-3 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTrades.map((trade) => {
+                    let pnl = 0;
+                    let pnlPercent = 0;
+                    let currentValue = 0;
+                    let entryValue = 0;
+                    let details = '';
+                    let quantity = '';
+
+                    if (trade.assetType === 'stock' && trade.entryPrice && trade.shares) {
+                      const currentPrice = trade.status === 'open'
+                        ? (stockPrices[trade.symbol] || trade.entryPrice)
+                        : (trade.exitPrice || trade.entryPrice);
+
+                      currentValue = currentPrice;
+                      entryValue = trade.entryPrice;
+                      details = 'Stock';
+                      quantity = `${trade.shares} shares`;
+
+                      pnl = trade.type === 'long'
+                        ? (currentPrice - trade.entryPrice) * trade.shares
+                        : (trade.entryPrice - currentPrice) * trade.shares;
+                      pnlPercent = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+                    } else if (trade.assetType === 'option' && trade.premium && trade.contracts) {
+                      const currentPremium = trade.status === 'open'
+                        ? (trade.currentPremium || trade.premium)
+                        : (trade.exitPremium || trade.premium);
+
+                      currentValue = currentPremium;
+                      entryValue = trade.premium;
+                      details = `${trade.optionType} $${trade.strikePrice} ${new Date(trade.expirationDate || '').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                      quantity = `${trade.contracts} contracts`;
+
+                      // Calculate P&L for both open and closed options
+                      if (trade.status === 'open' && trade.currentPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.currentPremium - trade.premium) * trade.contracts * 100
+                          : (trade.premium - trade.currentPremium) * trade.contracts * 100;
+                        pnlPercent = ((trade.currentPremium - trade.premium) / trade.premium) * 100;
+                      } else if (trade.status === 'closed' && trade.exitPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.exitPremium - trade.premium) * trade.contracts * 100
+                          : (trade.premium - trade.exitPremium) * trade.contracts * 100;
+                        pnlPercent = ((trade.exitPremium - trade.premium) / trade.premium) * 100;
+                      }
+                    } else if (trade.assetType === 'multi-leg') {
+                      details = trade.strategyType || 'Multi-Leg';
+                      quantity = `${trade.legs?.length || 0} legs`;
+                      entryValue = trade.netPremium || 0;
+                      currentValue = trade.status === 'closed'
+                        ? (trade.exitPremium || 0)
+                        : (trade.currentPremium || trade.netPremium || 0);
+
+                      // Calculate P&L for both open and closed multi-leg
+                      if (trade.status === 'open' && trade.currentPremium !== undefined && trade.netPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.currentPremium - trade.netPremium) * 100
+                          : (trade.netPremium - trade.currentPremium) * 100;
+                        if (trade.netPremium !== 0) {
+                          pnlPercent = ((trade.currentPremium - trade.netPremium) / Math.abs(trade.netPremium)) * 100;
+                        }
+                      } else if (trade.status === 'closed' && trade.exitPremium !== undefined && trade.netPremium !== undefined) {
+                        pnl = trade.type === 'long'
+                          ? (trade.exitPremium - trade.netPremium) * 100
+                          : (trade.netPremium - trade.exitPremium) * 100;
+                        if (trade.netPremium !== 0) {
+                          pnlPercent = ((trade.exitPremium - trade.netPremium) / Math.abs(trade.netPremium)) * 100;
+                        }
+                      }
+                    }
+
+                    return (
+                      <React.Fragment key={trade.id}>
+                      <tr className="border-t border-gray-800 hover:bg-gray-800/50">
+                        <td className="p-3 font-medium">{trade.symbol}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            trade.assetType === 'stock' ? 'bg-blue-900/30 text-blue-400' :
+                            trade.assetType === 'option' ? 'bg-purple-900/30 text-purple-400' :
+                            'bg-orange-900/30 text-orange-400'
+                          }`}>
+                            {trade.assetType.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            trade.type === 'long' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                          }`}>
+                            {trade.type.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right text-sm">{new Date(trade.entryDate).toLocaleDateString()}</td>
+                        <td className="p-3 text-right text-xs">{details}</td>
+                        <td className="p-3 text-right text-sm">{quantity}</td>
+                        <td className="p-3 text-right">
+                          ${entryValue.toFixed(2)}
+                        </td>
+                        <td className="p-3 text-right">
+                          {trade.status === 'open' ? (
+                            <span className={trade.assetType === 'stock' && stockPrices[trade.symbol] && currentValue >= entryValue ? 'text-green-400' : trade.assetType === 'stock' && stockPrices[trade.symbol] ? 'text-red-400' : ''}>
+                              ${currentValue.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span>${currentValue.toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className={`font-medium ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {pnl >= 0 ? '+' : ''}{formatNumber(pnl)}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className={`font-medium ${pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            trade.status === 'open' ? 'bg-blue-900/30 text-blue-400' : 'bg-gray-700 text-gray-300'
+                          }`}>
+                            {trade.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {trade.status === 'open' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (trade.exitStrategyEnabled) {
+                                      setExpandedExitStrategy(expandedExitStrategy === trade.id ? null : trade.id);
+                                    } else {
+                                      enableExitStrategy(trade.id);
+                                    }
+                                  }}
+                                  className={`p-1 hover:bg-purple-900/20 rounded transition-all ${
+                                    trade.exitStrategyEnabled ? 'text-purple-400 hover:text-purple-300' : 'text-gray-500 hover:text-purple-400'
+                                  }`}
+                                  title="Exit Strategy"
+                                >
+                                  <Activity className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const label = trade.assetType === 'stock' ? 'price' : 'premium';
+                                    const value = prompt(`Enter exit ${label} for ${trade.symbol}:`, currentValue.toFixed(2));
+                                    if (value) handleCloseTrade(trade.id, parseFloat(value));
+                                  }}
+                                  className="p-1 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-all"
+                                  title="Close Trade"
+                                >
+                                  <Target className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleDeleteTrade(trade.id)}
+                              className="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-all"
+                              title="Delete Trade"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Exit Strategy Row (Expandable) */}
+                      {trade.status === 'open' && trade.exitStrategyEnabled && expandedExitStrategy === trade.id && (
+                        <tr className="border-t border-gray-800 bg-gray-900/50">
+                          <td colSpan={11} className="p-4">
+                            <div className="bg-gray-800/50 rounded-lg p-4 border border-purple-700/30">
+                              <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-lg font-bold text-purple-400">🎯 Exit Strategy</h4>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 25)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 25%
+                                  </button>
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 50)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 50%
+                                  </button>
+                                  <button
+                                    onClick={() => handlePartialClose(trade.id, 75)}
+                                    className="px-3 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-medium transition-all"
+                                  >
+                                    Close 75%
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Current P&L Status */}
+                              <div className="mb-4 p-3 bg-gray-900 rounded border border-gray-700">
+                                <div className="flex justify-between items-center mb-3">
+                                  <span className="text-gray-400">Current P&L:</span>
+                                  <span className={`text-xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatNumber(pnl)} ({pnl >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                                  </span>
+                                </div>
+
+                                {/* Current Premium Editor for Options */}
+                                {(trade.assetType === 'option' || trade.assetType === 'multi-leg') && (
+                                  <div className={`mb-3 p-3 bg-gray-800 rounded border-2 ${
+                                    pnl === 0 ? 'border-yellow-500 animate-pulse' : 'border-blue-700/30'
+                                  }`}>
+                                    <label className={`text-sm font-bold mb-2 block ${
+                                      pnl === 0 ? 'text-yellow-400' : 'text-blue-400'
+                                    }`}>
+                                      💱 {pnl === 0 ? 'UPDATE CURRENT PREMIUM TO START →' : 'Update Current Premium (for P&L tracking)'}
+                                    </label>
+                                    <div className="flex gap-2 items-center">
+                                      <input
+                                        type="number"
+                                        key={`premium-${trade.id}`}
+                                        defaultValue={trade.currentPremium ?? trade.premium ?? ''}
+                                        onInput={(e) => {
+                                          // Update immediately as user types for live P&L
+                                          const input = e.target as HTMLInputElement;
+                                          const newPremium = input.value === '' ? undefined : parseFloat(input.value);
+                                          if (!isNaN(newPremium as number) || newPremium === undefined) {
+                                            setTrades(trades.map(t =>
+                                              t.id === trade.id ? { ...t, currentPremium: newPremium } : t
+                                            ));
+                                          }
+                                        }}
+                                        className={`flex-1 bg-gray-900 border-2 rounded px-3 py-2 text-white font-medium ${
+                                          pnl === 0 ? 'border-yellow-500 text-lg' : 'border-gray-700'
+                                        }`}
+                                        step="0.01"
+                                        placeholder="Enter current premium from your broker"
+                                      />
+                                      <span className="text-sm text-gray-400 whitespace-nowrap">
+                                        Entry: <span className="text-white font-medium">${(trade.premium || trade.netPremium || 0).toFixed(2)}</span>
+                                      </span>
+                                    </div>
+                                    {pnl === 0 ? (
+                                      <div className="text-xs text-yellow-400 mt-2 font-semibold">
+                                        ⚡ Check your broker and enter the current option value above to activate exit tracking
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        Update this from your broker to track real-time P&L and targets
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {trade.maxProfit && trade.maxLoss && (
+                                  <div className="mt-2 flex justify-between text-sm">
+                                    <span className="text-gray-500">Max Profit: <span className="text-green-400">${trade.maxProfit.toFixed(2)}</span></span>
+                                    <span className="text-gray-500">Max Loss: <span className="text-red-400">${Math.abs(trade.maxLoss).toFixed(2)}</span></span>
+                                    <span className="text-gray-500">R:R: <span className="text-purple-400">{trade.riskRewardRatio?.toFixed(2)}</span></span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Visual Progress Bar */}
+                              <div className="mb-4">
+                                <div className="relative h-8 bg-gray-700 rounded-full overflow-hidden">
+                                  {/* Stop Loss Zone */}
+                                  <div className="absolute left-0 top-0 h-full w-1/4 bg-red-600/30"></div>
+                                  {/* Break Even */}
+                                  <div className="absolute left-1/4 top-0 h-full w-px bg-gray-400"></div>
+                                  {/* Target Zones */}
+                                  <div className="absolute left-1/4 top-0 h-full w-1/4 bg-yellow-600/20"></div>
+                                  <div className="absolute left-2/4 top-0 h-full w-1/4 bg-green-600/30"></div>
+                                  <div className="absolute right-0 top-0 h-full w-1/4 bg-green-600/50"></div>
+
+                                  {/* Current Position Indicator */}
+                                  {(() => {
+                                    const stopLoss = trade.stopLoss || 0;
+                                    const tp3 = trade.takeProfit3 || 0;
+                                    const range = tp3 - stopLoss;
+                                    const position = range !== 0 ? ((pnl - stopLoss) / range) * 100 : 50;
+                                    const clampedPosition = Math.max(0, Math.min(100, position));
+
+                                    return (
+                                      <div
+                                        className="absolute top-0 h-full w-1 bg-white shadow-lg"
+                                        style={{ left: `${clampedPosition}%` }}
+                                      >
+                                        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-bold text-white whitespace-nowrap">
+                                          YOU
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                  <span>Stop Loss</span>
+                                  <span>Break Even</span>
+                                  <span>TP1</span>
+                                  <span>TP2</span>
+                                  <span>TP3</span>
+                                </div>
+                              </div>
+
+                              {/* Editable Targets */}
+                              <div className="grid grid-cols-4 gap-3">
+                                {/* Stop Loss */}
+                                <div className="bg-red-900/10 p-3 rounded border border-red-700/30">
+                                  <label className="text-xs text-red-400 font-semibold mb-1 block">🛡️ Stop Loss</label>
+                                  <input
+                                    type="number"
+                                    value={trade.stopLoss?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'stopLoss', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.stopLossPercent?.toFixed(1)}%</div>
+                                  {pnl <= (trade.stopLoss || 0) && (
+                                    <div className="text-xs text-red-400 font-bold mt-1">❌ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 1 */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 TP1 (50%)</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit1?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit1', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit1Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit1 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 2 */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 TP2 (75%)</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit2?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit2', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit2Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit2 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+
+                                {/* Take Profit 3 / Max */}
+                                <div className="bg-green-900/10 p-3 rounded border border-green-700/30">
+                                  <label className="text-xs text-green-400 font-semibold mb-1 block">🎯 {trade.maxProfit ? 'Max' : 'TP3'}</label>
+                                  <input
+                                    type="number"
+                                    value={trade.takeProfit3?.toFixed(2) || ''}
+                                    onChange={(e) => updateExitTarget(trade.id, 'takeProfit3', parseFloat(e.target.value))}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                                    step="0.01"
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">{trade.takeProfit3Percent?.toFixed(1)}%</div>
+                                  {pnl >= (trade.takeProfit3 || 0) && (
+                                    <div className="text-xs text-green-400 font-bold mt-1">✅ HIT!</div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Suggested Action */}
+                              {(() => {
+                                let suggestion = '';
+                                let suggestionColor = 'text-gray-400';
+
+                                // Special case: If P&L is exactly $0 and it's an option, prompt to update premium
+                                if (pnl === 0 && (trade.assetType === 'option' || trade.assetType === 'multi-leg')) {
+                                  suggestion = '💱 Update Current Premium above to start tracking P&L and targets';
+                                  suggestionColor = 'text-blue-400';
+                                } else if (pnl <= (trade.stopLoss || 0)) {
+                                  suggestion = '⚠️ Stop loss hit - Consider exiting to limit losses';
+                                  suggestionColor = 'text-red-400';
+                                } else if (pnl >= (trade.takeProfit3 || 0)) {
+                                  suggestion = '🎉 Max profit reached - Take profit or trail stop tight';
+                                  suggestionColor = 'text-green-400';
+                                } else if (pnl >= (trade.takeProfit2 || 0)) {
+                                  suggestion = '💰 TP2 hit - Consider taking 75% off, trail rest';
+                                  suggestionColor = 'text-green-400';
+                                } else if (pnl >= (trade.takeProfit1 || 0)) {
+                                  suggestion = '💡 TP1 hit - Consider taking 50% off, move stop to breakeven';
+                                  suggestionColor = 'text-yellow-400';
+                                } else if (pnl > 0) {
+                                  suggestion = '📊 In profit - Hold for targets or trail stop';
+                                  suggestionColor = 'text-blue-400';
+                                } else {
+                                  suggestion = '⏳ Waiting for price action...';
+                                  suggestionColor = 'text-gray-400';
+                                }
+
+                                return (
+                                  <div className={`mt-4 p-3 bg-gray-900 rounded border border-gray-700 ${suggestionColor} font-medium text-sm`}>
+                                    {suggestion}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Add Trade Modal */}
+      {showAddTrade && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-y-auto" onClick={() => setShowAddTrade(false)}>
+          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full border border-gray-800 my-8" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Record New Trade</h3>
+              <button onClick={() => setShowAddTrade(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Portfolio Selection */}
+            <div className="mb-6 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
+              <label className="text-sm text-gray-400 mb-2 block">Select Portfolio/Broker</label>
+              <div className="flex gap-2">
+                <select
+                  value={newTrade.portfolioId || selectedPortfolio}
+                  onChange={(e) => setNewTrade(prev => ({ ...prev, portfolioId: e.target.value }))}
+                  className="flex-1 px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                >
+                  {portfolios.filter(p => p.broker !== 'ALL').map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.broker === 'FIDELITY' ? '🏦 Fidelity' :
+                       p.broker === 'TDA' ? '📈 Think or Swim' :
+                       p.broker === 'WEDBUSH' ? '💼 Wedbush' :
+                       p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    setShowAddTrade(false);
+                    setShowAddPortfolio(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2 whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Portfolio
+                </button>
+              </div>
+            </div>
+
+            {/* Popular Symbols */}
+            <div className="mb-6">
+              <label className="text-sm text-gray-400 mb-2 block">Popular Symbols:</label>
+              <div className="flex flex-wrap gap-2">
+                {popularSymbols.map(symbol => (
+                  <button
+                    key={symbol}
+                    onClick={() => selectSymbol(symbol)}
+                    className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
+                      newTrade.symbol === symbol
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {symbol}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Asset Type Selection */}
+            <div className="mb-6">
+              <label className="text-sm text-gray-400 mb-2 block">Trading Type</label>
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  onClick={() => setNewTrade(prev => ({ ...prev, assetType: 'stock', strategyType: 'SINGLE' }))}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    newTrade.assetType === 'stock'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📈 Stocks
+                </button>
+                <button
+                  onClick={() => setNewTrade(prev => ({ ...prev, assetType: 'option', strategyType: 'SINGLE' }))}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    newTrade.assetType === 'option' && newTrade.strategyType === 'SINGLE'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  ⚡ Single Option
+                </button>
+                <button
+                  onClick={() => changeStrategyType('CALL_SPREAD')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['CALL_SPREAD', 'PUT_SPREAD', 'BEAR_CALL_SPREAD', 'BEAR_PUT_SPREAD'].includes(newTrade.strategyType)
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  📊 Spreads
+                </button>
+                <button
+                  onClick={() => changeStrategyType('STRADDLE')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['STRADDLE', 'STRANGLE'].includes(newTrade.strategyType)
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  🎯 Straddle/Strangle
+                </button>
+                <button
+                  onClick={() => changeStrategyType('IRON_CONDOR')}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    ['IRON_CONDOR', 'BUTTERFLY', 'JADE_LIZARD'].includes(newTrade.strategyType)
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  🦋 Advanced
+                </button>
+              </div>
+            </div>
+
+            {/* Strategy Template Selection (for multi-leg) */}
+            {newTrade.assetType === 'multi-leg' && (
+              <div className="mb-6">
+                <label className="text-sm text-gray-400 mb-2 block">Strategy Template</label>
+                <select
+                  value={newTrade.strategyType}
+                  onChange={(e) => changeStrategyType(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white"
+                >
+                  {Object.entries(strategyTemplates)
+                    .filter(([key]) => key !== 'SINGLE')
+                    .map(([key, strategy]) => (
+                      <option key={key} value={key}>
+                        {strategy.name} - {strategy.description}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-1 block">Portfolio</label>
+                <select
+                  value={newTrade.portfolioId}
+                  onChange={(e) => setNewTrade({ ...newTrade, portfolioId: e.target.value })}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {portfolios.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Symbol *</label>
+                  <input
+                    type="text"
+                    placeholder="AAPL"
+                    value={newTrade.symbol}
+                    onChange={(e) => setNewTrade({ ...newTrade, symbol: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Position Type</label>
+                  <select
+                    value={newTrade.type}
+                    onChange={(e) => setNewTrade({ ...newTrade, type: e.target.value as 'long' | 'short' })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="long">Long</option>
+                    <option value="short">Short</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm text-gray-400 mb-1 block">Entry Date</label>
+                  <input
+                    type="date"
+                    value={newTrade.entryDate}
+                    onChange={(e) => setNewTrade({ ...newTrade, entryDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* Stock-specific fields */}
+              {newTrade.assetType === 'stock' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-gray-400 mb-1 block">Entry Price *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="100.00"
+                      value={newTrade.entryPrice}
+                      onChange={(e) => setNewTrade({ ...newTrade, entryPrice: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-gray-400 mb-1 block">Shares *</label>
+                    <input
+                      type="number"
+                      placeholder="100"
+                      value={newTrade.shares}
+                      onChange={(e) => setNewTrade({ ...newTrade, shares: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Single option fields */}
+              {newTrade.assetType === 'option' && newTrade.strategyType === 'SINGLE' && (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Option Type *</label>
+                      <select
+                        value={newTrade.optionType}
+                        onChange={(e) => setNewTrade({ ...newTrade, optionType: e.target.value as 'CALL' | 'PUT' })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="CALL">📈 Call</option>
+                        <option value="PUT">📉 Put</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Strike Price *</label>
+                      <input
+                        type="number"
+                        step="0.50"
+                        placeholder="155.00"
+                        value={newTrade.strikePrice}
+                        onChange={(e) => setNewTrade({ ...newTrade, strikePrice: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Expiration Date *</label>
+                      <input
+                        type="date"
+                        value={newTrade.expirationDate}
+                        onChange={(e) => setNewTrade({ ...newTrade, expirationDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        min={new Date().toISOString().split('T')[0]}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Premium (per contract) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="5.50"
+                        value={newTrade.premium}
+                        onChange={(e) => setNewTrade({ ...newTrade, premium: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-400 mb-1 block">Contracts *</label>
+                      <input
+                        type="number"
+                        placeholder="10"
+                        value={newTrade.contracts}
+                        onChange={(e) => setNewTrade({ ...newTrade, contracts: e.target.value })}
+                        className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Multi-leg Options Strategy Builder */}
+              {newTrade.assetType === 'multi-leg' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-lg font-medium text-yellow-400">
+                      🏧 {strategyTemplates[newTrade.strategyType]?.name} Builder
+                    </h4>
+                    <span className="text-xs text-gray-400">
+                      {newTrade.legs.length} leg{newTrade.legs.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {newTrade.legs.map((leg, index) => (
+                    <div key={index} className="bg-gray-800 p-4 rounded border-l-4 border-yellow-400">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-sm font-bold text-yellow-400">Leg {index + 1}</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          leg.action === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                        }`}>
+                          {leg.action}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          leg.optionType === 'CALL' ? 'bg-blue-900 text-blue-300' : 'bg-purple-900 text-purple-300'
+                        }`}>
+                          {leg.optionType}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-3">
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Action</label>
+                          <select
+                            value={leg.action}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].action = e.target.value as 'BUY' | 'SELL';
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          >
+                            <option value="BUY">BUY</option>
+                            <option value="SELL">SELL</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Type</label>
+                          <select
+                            value={leg.optionType}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].optionType = e.target.value as 'CALL' | 'PUT';
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          >
+                            <option value="CALL">CALL</option>
+                            <option value="PUT">PUT</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Strike *</label>
+                          <input
+                            type="number"
+                            step="0.50"
+                            placeholder="155"
+                            value={leg.strikePrice}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].strikePrice = e.target.value;
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Contracts</label>
+                          <input
+                            type="number"
+                            placeholder="1"
+                            value={leg.contracts}
+                            onChange={(e) => {
+                              const newLegs = [...newTrade.legs];
+                              newLegs[index].contracts = e.target.value;
+                              setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-2">
+                        <label className="text-xs text-gray-400 mb-1 block">Expiration Date</label>
+                        <input
+                          type="date"
+                          value={leg.expirationDate}
+                          onChange={(e) => {
+                            const newLegs = [...newTrade.legs];
+                            newLegs[index].expirationDate = e.target.value;
+                            setNewTrade(prev => ({ ...prev, legs: newLegs }));
+                          }}
+                          className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Net Premium for entire spread */}
+                  <div className="bg-blue-900/10 p-4 rounded border-2 border-blue-600/50">
+                    <label className="text-sm text-blue-400 font-bold mb-2 block">
+                      💰 Net Premium (Total for entire {strategyTemplates[newTrade.strategyType]?.name})
+                    </label>
+                    <div className="flex gap-3 items-center">
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g., 0.72 for a debit spread or -0.72 for a credit spread"
+                        value={newTrade.netPremium}
+                        onChange={(e) => setNewTrade({ ...newTrade, netPremium: e.target.value })}
+                        className="flex-1 px-4 py-3 bg-gray-800 text-white text-lg font-medium rounded border-2 border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="text-xs text-gray-400">
+                        <div>Positive = Debit (you pay)</div>
+                        <div>Negative = Credit (you receive)</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                      Enter the total premium for the entire spread (e.g., BUY 41C, SELL 43C for 0.72 total)
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-sm text-gray-400 mb-1 block">Notes</label>
+                <textarea
+                  placeholder="Trade notes..."
+                  value={newTrade.notes}
+                  onChange={(e) => setNewTrade({ ...newTrade, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleAddTrade}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-all"
+                >
+                  Add Trade
+                </button>
+                <button
+                  onClick={() => setShowAddTrade(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-medium transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Portfolio Modal */}
+      {showAddPortfolio && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowAddPortfolio(false)}>
+          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full border border-gray-800" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Create New Portfolio</h3>
+              <button onClick={() => setShowAddPortfolio(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-1 block">Portfolio Name</label>
+                <input
+                  type="text"
+                  placeholder="My Portfolio"
+                  value={newPortfolioName}
+                  onChange={(e) => setNewPortfolioName(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleAddPortfolio}
+                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium transition-all"
+                >
+                  Create Portfolio
+                </button>
+                <button
+                  onClick={() => setShowAddPortfolio(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-medium transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportCSV && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50" onClick={() => setShowImportCSV(false)}>
+          <div className="bg-gray-900 rounded-lg p-6 max-w-md w-full border border-gray-800" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Import CSV from Broker</h3>
+              <button onClick={() => setShowImportCSV(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Select Broker</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setSelectedBroker('FIDELITY')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'FIDELITY'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    Fidelity
+                  </button>
+                  <button
+                    onClick={() => setSelectedBroker('TDA')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'TDA'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    TDA
+                  </button>
+                  <button
+                    onClick={() => setSelectedBroker('WEDBUSH')}
+                    className={`px-4 py-3 rounded font-medium transition-all ${
+                      selectedBroker === 'WEDBUSH'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    Wedbush
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Upload CSV File</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCSVImport}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                />
+              </div>
+
+              {importStatus && (
+                <div className={`p-3 rounded ${
+                  importStatus.includes('Error') || importStatus.includes('No trades')
+                    ? 'bg-red-900/20 text-red-400'
+                    : importStatus.includes('Successfully')
+                    ? 'bg-green-900/20 text-green-400'
+                    : 'bg-blue-900/20 text-blue-400'
+                }`}>
+                  {importStatus}
+                </div>
+              )}
+
+              <div className="text-sm text-gray-400 bg-gray-800 p-3 rounded">
+                <p className="font-semibold mb-1">Instructions:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Select your broker from the buttons above</li>
+                  <li>Export your trades as CSV from your broker</li>
+                  <li>Upload the CSV file using the button above</li>
+                  <li>Trades will be automatically parsed and imported</li>
+                </ol>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    setShowImportCSV(false);
+                    setImportStatus('');
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-medium transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
