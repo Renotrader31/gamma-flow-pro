@@ -301,7 +301,7 @@ export default function Home() {
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 30 && s.marketCap > 20000000000 && s.gex > 5000000 && Math.abs(s.changePercent || 0) < 3)
+        .filter(s => s.price > 20 && s.marketCap > 10000000000 && s.gex > 1000000 && Math.abs(s.changePercent || 0) < 3)
         .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
         .slice(0, 20)
     },
@@ -325,7 +325,7 @@ export default function Home() {
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 10 && s.optionVolume > 10000 && s.gex > 10000000)
+        .filter(s => s.price > 5 && s.optionVolume > 5000 && s.gex > 5000000)
         .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
