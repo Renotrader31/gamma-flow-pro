@@ -423,14 +423,68 @@ function calculateCoreValue(candles: CandleData[]): {
     stScore * 0.15
   );
 
-  // ADX (simplified - use average true range)
+  // Calculate real ADX (Average Directional Index)
   const atrVals = atr(candles, 14);
   const atrCurrent = atrVals[idx];
   const atrAvg = sma(atrVals, 50)[idx];
   const atrRatio = atrAvg > 0 ? atrCurrent / atrAvg : 1.0;
 
-  // Mock ADX value (normally would calculate DI+ and DI-)
-  const adxValue = Math.min(atrRatio * 25, 100);
+  // Real ADX calculation
+  const adxPeriod = 14;
+  const diPlus: number[] = [];
+  const diMinus: number[] = [];
+  const dx: number[] = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const highDiff = candles[i].high - candles[i - 1].high;
+    const lowDiff = candles[i - 1].low - candles[i].low;
+
+    const plusDM = highDiff > lowDiff && highDiff > 0 ? highDiff : 0;
+    const minusDM = lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0;
+
+    if (i < adxPeriod) {
+      diPlus.push(0);
+      diMinus.push(0);
+      dx.push(0);
+      continue;
+    }
+
+    // Calculate smoothed DMs
+    let sumPlusDM = 0;
+    let sumMinusDM = 0;
+    let sumTR = 0;
+
+    for (let j = 0; j < adxPeriod; j++) {
+      const idx2 = i - j;
+      if (idx2 <= 0) continue;
+
+      const hd = candles[idx2].high - candles[idx2 - 1].high;
+      const ld = candles[idx2 - 1].low - candles[idx2].low;
+      sumPlusDM += hd > ld && hd > 0 ? hd : 0;
+      sumMinusDM += ld > hd && ld > 0 ? ld : 0;
+
+      const tr = Math.max(
+        candles[idx2].high - candles[idx2].low,
+        Math.abs(candles[idx2].high - candles[idx2 - 1].close),
+        Math.abs(candles[idx2].low - candles[idx2 - 1].close)
+      );
+      sumTR += tr;
+    }
+
+    const diP = sumTR > 0 ? (sumPlusDM / sumTR) * 100 : 0;
+    const diM = sumTR > 0 ? (sumMinusDM / sumTR) * 100 : 0;
+
+    diPlus.push(diP);
+    diMinus.push(diM);
+
+    // Calculate DX
+    const diSum = diP + diM;
+    const dxVal = diSum > 0 ? (Math.abs(diP - diM) / diSum) * 100 : 0;
+    dx.push(dxVal);
+  }
+
+  // Calculate ADX as smoothed DX
+  const adxValue = idx >= adxPeriod * 2 ? sma(dx, adxPeriod)[idx - 1] || 0 : 0;
 
   // Momentum multiplier
   const adxStrength = Math.min(adxValue / 50, 1.0);
