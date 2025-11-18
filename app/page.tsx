@@ -233,9 +233,14 @@ export default function Home() {
         const result = await response.json()
         
         if (result.status === 'success' && result.data && result.data.length > 0) {
+          const stocksWithOptions = result.data.filter((s: any) => s.gex > 0 || s.optionVolume > 0)
           console.log(`Loaded ${result.data.length} stocks from API`)
+          console.log(`  - ${stocksWithOptions.length} stocks have options data`)
+          console.log(`  - ${result.data.filter((s: any) => s.gex > 10000000).length} stocks have GEX > 10M`)
+          console.log(`  - ${result.data.filter((s: any) => s.optionVolume > 10000).length} stocks have optionVolume > 10K`)
+          console.log(`  - ${result.data.filter((s: any) => Math.abs(s.netPremium || 0) > 1000000).length} stocks have netPremium > 1M`)
           setStockData(result.data)
-          setDataStatus(`Live: ${result.data.length} stocks`)
+          setDataStatus(`Live: ${result.data.length} stocks (${stocksWithOptions.length} w/ options)`)
           setIsOnline(true)
         } else {
           console.log('No data from API')
@@ -284,7 +289,7 @@ export default function Home() {
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 15 && s.netPremium && Math.abs(s.netPremium) > 5000000 && s.optionVolume > 10000)
+        .filter(s => s.price > 10 && s.netPremium && Math.abs(s.netPremium) > 1000000 && s.optionVolume > 5000)
         .sort((a, b) => Math.abs(b.netPremium || 0) - Math.abs(a.netPremium || 0))
         .slice(0, 20)
     },
@@ -296,7 +301,7 @@ export default function Home() {
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 50 && s.marketCap > 50000000000 && s.gex > 50000000 && Math.abs(s.changePercent) < 2)
+        .filter(s => s.price > 30 && s.marketCap > 20000000000 && s.gex > 5000000 && Math.abs(s.changePercent || 0) < 3)
         .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
         .slice(0, 20)
     },
@@ -320,7 +325,7 @@ export default function Home() {
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 20 && s.optionVolume > 50000 && s.gex > 200000000)
+        .filter(s => s.price > 10 && s.optionVolume > 10000 && s.gex > 10000000)
         .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
@@ -431,13 +436,14 @@ export default function Home() {
       console.log('No stock data available')
       return
     }
-    
+
     setScanLoading(prev => ({ ...prev, [strategyId]: true }))
     const strategy = scannerStrategies.find(s => s.id === strategyId)
-    
+
     if (strategy) {
       setTimeout(() => {
         const filtered = strategy.filter(stockData)
+        console.log(`Scanner "${strategy.name}": ${filtered.length} stocks found (from ${stockData.length} total stocks)`)
         setScanResults(prev => ({ ...prev, [strategyId]: filtered }))
         setScanLoading(prev => ({ ...prev, [strategyId]: false }))
       }, 500)

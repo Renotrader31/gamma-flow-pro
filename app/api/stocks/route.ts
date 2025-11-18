@@ -185,9 +185,9 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
   if (polygonData && polygonData.length > 0) {
     // Process top stocks with options data (limit to prevent rate limiting)
     const topStocks = polygonData
-      .filter(t => t.day?.v > 1000000) // Only stocks with >1M volume
+      .filter(t => t.day?.v > 500000) // Only stocks with >500K volume
       .sort((a, b) => (b.day?.v || 0) - (a.day?.v || 0))
-      .slice(0, 100) // Top 100 by volume
+      .slice(0, 250) // Top 250 by volume - increased for better scanner coverage
 
     for (const ticker of topStocks) {
       if (ticker.ticker) {
