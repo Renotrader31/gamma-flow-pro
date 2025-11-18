@@ -33,7 +33,8 @@ async function fetchPolygonCandles(
   timespan: 'minute' | 'day',
   limit: number = 500
 ): Promise<CandleData[]> {
-  const apiKey = process.env.POLYGON_API_KEY;
+  // Hardcoded API key (use environment variable in production for security)
+  const apiKey = process.env.POLYGON_API_KEY || '75rlu6cWGNnIqqR_x8M384YUjBgGk6kT';
 
   if (!apiKey) {
     console.warn('POLYGON_API_KEY not found, using mock data');
