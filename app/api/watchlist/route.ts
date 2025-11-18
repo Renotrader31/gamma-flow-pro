@@ -24,8 +24,73 @@ export interface WatchlistResult {
   timestamp: number;
 }
 
-// Mock data generator for testing
-// In production, replace with actual market data API calls
+/**
+ * Fetch candle data from Polygon.io API
+ */
+async function fetchPolygonCandles(
+  symbol: string,
+  multiplier: number,
+  timespan: 'minute' | 'day',
+  limit: number = 500
+): Promise<CandleData[]> {
+  const apiKey = process.env.POLYGON_API_KEY;
+
+  if (!apiKey) {
+    console.warn('POLYGON_API_KEY not found, using mock data');
+    return generateMockCandles(symbol, limit, timespan === 'minute' ? '5m' : '1d');
+  }
+
+  try {
+    // Calculate date range (500 periods back)
+    const to = new Date();
+    const from = new Date();
+
+    if (timespan === 'minute') {
+      // 500 * 5 minutes = 2500 minutes = ~42 hours = ~2 trading days
+      from.setDate(from.getDate() - 5); // Get 5 days to ensure we have enough data
+    } else {
+      // 500 days = ~1.4 years
+      from.setFullYear(from.getFullYear() - 2); // Get 2 years to ensure enough data
+    }
+
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = to.toISOString().split('T')[0];
+
+    const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${fromStr}/${toStr}?adjusted=true&sort=asc&limit=50000&apiKey=${apiKey}`;
+
+    console.log(`Fetching ${symbol} ${multiplier}${timespan} data from Polygon...`);
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      console.log(`✓ Got ${data.results.length} candles for ${symbol}`);
+
+      // Convert Polygon format to our CandleData format
+      const candles: CandleData[] = data.results.map((bar: any) => ({
+        open: bar.o,
+        high: bar.h,
+        low: bar.l,
+        close: bar.c,
+        volume: bar.v,
+        timestamp: bar.t // Polygon already provides timestamp in milliseconds
+      }));
+
+      // Return the most recent 'limit' candles
+      return candles.slice(-limit);
+    } else {
+      console.warn(`No data from Polygon for ${symbol}, using mock data`);
+      return generateMockCandles(symbol, limit, timespan === 'minute' ? '5m' : '1d');
+    }
+  } catch (error) {
+    console.error(`Error fetching ${symbol} from Polygon:`, error);
+    return generateMockCandles(symbol, limit, timespan === 'minute' ? '5m' : '1d');
+  }
+}
+
+/**
+ * Mock data generator (fallback when API unavailable)
+ */
 function generateMockCandles(
   symbol: string,
   count: number,
@@ -62,46 +127,62 @@ function generateMockCandles(
   return candles;
 }
 
-// Generate mock BFCI data
-function generateBFCIData(): {
+/**
+ * Fetch BFCI component data from Polygon
+ */
+async function fetchBFCIData(): Promise<{
   spy: CandleData[];
   hyg: CandleData[];
   lqd: CandleData[];
   vix: CandleData[];
   dxy: CandleData[];
-} {
-  return {
-    spy: generateMockCandles('SPY', 500, '1d'),
-    hyg: generateMockCandles('HYG', 500, '1d'),
-    lqd: generateMockCandles('LQD', 500, '1d'),
-    vix: generateMockCandles('VIX', 500, '1d'),
-    dxy: generateMockCandles('DXY', 500, '1d')
-  };
+}> {
+  console.log('Fetching BFCI component data...');
+
+  const [spy, hyg, lqd, vix, dxy] = await Promise.all([
+    fetchPolygonCandles('SPY', 1, 'day', 500),
+    fetchPolygonCandles('HYG', 1, 'day', 500),
+    fetchPolygonCandles('LQD', 1, 'day', 500),
+    fetchPolygonCandles('VIX', 1, 'day', 500),
+    fetchPolygonCandles('DXY', 1, 'day', 500)
+  ]);
+
+  return { spy, hyg, lqd, vix, dxy };
 }
 
 /**
- * Fetch market data for a symbol
- * TODO: Replace with actual API calls (Polygon, Alpha Vantage, etc.)
+ * Fetch market data for a symbol using Polygon.io API
  */
 async function fetchMarketData(
   symbol: string,
   interval: '5m' | '1d'
 ): Promise<MarketData> {
-  // Mock implementation
-  const candles = generateMockCandles(symbol, interval === '5m' ? 500 : 500, interval);
-  const bfciData = interval === '1d' ? generateBFCIData() : undefined;
+  console.log(`Fetching ${symbol} ${interval} data...`);
+
+  // Fetch candles based on interval
+  const candles = interval === '5m'
+    ? await fetchPolygonCandles(symbol, 5, 'minute', 500)
+    : await fetchPolygonCandles(symbol, 1, 'day', 500);
 
   return {
     symbol,
-    candles,
-    ...(bfciData || {})
+    candles
   };
 }
 
 /**
  * Scan a single symbol for alignment
  */
-async function scanSymbol(symbol: string): Promise<WatchlistResult | null> {
+async function scanSymbol(
+  symbol: string,
+  bfciData: {
+    spy: CandleData[];
+    hyg: CandleData[];
+    lqd: CandleData[];
+    vix: CandleData[];
+    dxy: CandleData[];
+  }
+): Promise<WatchlistResult | null> {
   try {
     // Fetch data for both timeframes
     const [fiveMinData, dailyData] = await Promise.all([
@@ -110,7 +191,6 @@ async function scanSymbol(symbol: string): Promise<WatchlistResult | null> {
     ]);
 
     // Add BFCI data to both
-    const bfciData = generateBFCIData();
     fiveMinData.spy = bfciData.spy;
     fiveMinData.hyg = bfciData.hyg;
     fiveMinData.lqd = bfciData.lqd;
@@ -178,8 +258,12 @@ export async function GET(request: NextRequest) {
       ? symbolsParam.split(',').map(s => s.trim().toUpperCase())
       : defaultSymbols;
 
+    // Fetch BFCI data once (shared across all symbols)
+    console.log('Fetching BFCI data for all symbols...');
+    const bfciData = await fetchBFCIData();
+
     // Scan all symbols in parallel
-    const scanPromises = symbols.map(symbol => scanSymbol(symbol));
+    const scanPromises = symbols.map(symbol => scanSymbol(symbol, bfciData));
     const scanResults = await Promise.all(scanPromises);
 
     // Filter out nulls and apply filters
@@ -236,9 +320,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch BFCI data once (shared across all symbols)
+    console.log('Fetching BFCI data for all symbols...');
+    const bfciData = await fetchBFCIData();
+
     // Scan all symbols
     const scanPromises = symbols.map((symbol: string) =>
-      scanSymbol(symbol.trim().toUpperCase())
+      scanSymbol(symbol.trim().toUpperCase(), bfciData)
     );
     const scanResults = await Promise.all(scanPromises);
 
