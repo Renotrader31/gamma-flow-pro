@@ -277,7 +277,6 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
 
     const elapsed = Date.now() - startTime
     console.log(`Options data fetched in ${(elapsed / 1000).toFixed(1)}s (${topStocks.length} stocks, ${batches.length} batches)`)
-  }
 
     // Add remaining stocks with basic data (no options)
     polygonData.forEach(ticker => {
@@ -303,7 +302,7 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
           dex: 0,
           vex: 0,
           putCallRatio: 1.0,
-          ivRank: 50,
+          ivRank: 0,
           flowScore: 50,
           netPremium: 0,
           darkPoolRatio: 0,
