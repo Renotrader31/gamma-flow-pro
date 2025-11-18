@@ -232,24 +232,45 @@ function calculateOptionsMetrics(optionsData: any, currentPrice: number = 0) {
 
 async function fetchFMPData() {
   const apiKey = process.env.FMP_API_KEY
-  
+
   if (!apiKey) {
     console.log('No FMP API key found')
     return []
   }
-  
+
   try {
+    // Get most active stocks - FMP returns comprehensive data
     const response = await fetch(
       `https://financialmodelingprep.com/api/v3/stock_market/actives?apikey=${apiKey}`
     )
-    
+
     if (!response.ok) {
       console.log('FMP response not OK:', response.status)
       return []
     }
-    
-    const data = await response.json()
-    return Array.isArray(data) ? data : []
+
+    const actives = await response.json()
+
+    // Also fetch top gainers and losers for more coverage
+    const [gainersRes, losersRes] = await Promise.all([
+      fetch(`https://financialmodelingprep.com/api/v3/stock_market/gainers?apikey=${apiKey}`),
+      fetch(`https://financialmodelingprep.com/api/v3/stock_market/losers?apikey=${apiKey}`)
+    ])
+
+    const gainers = gainersRes.ok ? await gainersRes.json() : []
+    const losers = losersRes.ok ? await losersRes.json() : []
+
+    // Combine and deduplicate
+    const allStocks = [...(Array.isArray(actives) ? actives : []),
+                        ...(Array.isArray(gainers) ? gainers : []),
+                        ...(Array.isArray(losers) ? losers : [])]
+
+    const uniqueStocks = Array.from(
+      new Map(allStocks.map(stock => [stock.symbol, stock])).values()
+    )
+
+    console.log(`FMP returned ${uniqueStocks.length} unique stocks`)
+    return uniqueStocks
   } catch (error) {
     console.log('FMP error:', error)
     return []
@@ -267,46 +288,71 @@ function chunkArray(array: any[], size: number) {
 
 // Fetch price bars for liquidity analysis
 async function fetchBarsForSymbol(symbol: string): Promise<PriceBar[]> {
-  const apiKey = process.env.POLYGON_API_KEY
+  const polygonKey = process.env.POLYGON_API_KEY
+  const fmpKey = process.env.FMP_API_KEY
 
-  if (!apiKey) {
-    return generateMockBars(symbol, 100)
+  // Try Polygon first
+  if (polygonKey) {
+    try {
+      const to = new Date()
+      const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const fromDate = from.toISOString().split('T')[0]
+      const toDate = to.toISOString().split('T')[0]
+
+      const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=100&apiKey=${polygonKey}`
+
+      const response = await fetch(url, { cache: 'no-store' })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.results && data.results.length > 0) {
+          const bars: PriceBar[] = data.results.map((bar: any) => ({
+            open: bar.o,
+            high: bar.h,
+            low: bar.l,
+            close: bar.c,
+            volume: bar.v,
+            timestamp: bar.t,
+          }))
+          console.log(`Got ${bars.length} Polygon bars for ${symbol}`)
+          return bars.slice(-100)
+        }
+      }
+    } catch (error) {
+      console.log(`Polygon bars error for ${symbol}:`, error)
+    }
   }
 
-  try {
-    // Get last 7 days of 5-minute bars
-    const to = new Date()
-    const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000)
-    const fromDate = from.toISOString().split('T')[0]
-    const toDate = to.toISOString().split('T')[0]
+  // Fallback to FMP intraday data
+  if (fmpKey) {
+    try {
+      // FMP intraday endpoint - 5min bars
+      const url = `https://financialmodelingprep.com/api/v3/historical-chart/5min/${symbol}?apikey=${fmpKey}`
 
-    const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=100&apiKey=${apiKey}`
+      const response = await fetch(url, { cache: 'no-store' })
 
-    const response = await fetch(url, { cache: 'no-store' })
-
-    if (!response.ok) {
-      return generateMockBars(symbol, 100)
+      if (response.ok) {
+        const data = await response.json()
+        if (Array.isArray(data) && data.length > 0) {
+          const bars: PriceBar[] = data.map((bar: any) => ({
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            volume: bar.volume,
+            timestamp: new Date(bar.date).getTime(),
+          }))
+          console.log(`Got ${bars.length} FMP bars for ${symbol}`)
+          return bars.slice(0, 100).reverse() // FMP returns newest first, reverse it
+        }
+      }
+    } catch (error) {
+      console.log(`FMP bars error for ${symbol}:`, error)
     }
-
-    const data = await response.json()
-
-    if (!data.results || data.results.length === 0) {
-      return generateMockBars(symbol, 100)
-    }
-
-    const bars: PriceBar[] = data.results.map((bar: any) => ({
-      open: bar.o,
-      high: bar.h,
-      low: bar.l,
-      close: bar.c,
-      volume: bar.v,
-      timestamp: bar.t,
-    }))
-
-    return bars.slice(-100) // Return last 100 bars
-  } catch (error) {
-    return generateMockBars(symbol, 100)
   }
+
+  // Final fallback to mock data
+  return generateMockBars(symbol, 100)
 }
 
 // Generate mock price bars
