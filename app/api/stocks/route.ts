@@ -178,6 +178,15 @@ async function fetchFMPData() {
   }
 }
 
+// Helper function to batch array into chunks
+function chunkArray(array: any[], size: number) {
+  const chunks = []
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size))
+  }
+  return chunks
+}
+
 async function processMarketData(polygonData: any[], fmpData: any[], unusualWhalesData: any) {
   const stockMap = new Map()
 
@@ -189,15 +198,29 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
       .sort((a, b) => (b.day?.v || 0) - (a.day?.v || 0))
       .slice(0, 250) // Top 250 by volume - increased for better scanner coverage
 
-    for (const ticker of topStocks) {
-      if (ticker.ticker) {
-        const dayData = ticker.day || {}
-        const prevDay = ticker.prevDay || {}
-        const price = dayData.c || ticker.lastTrade?.p || 0
+    console.log(`Fetching options data for ${topStocks.length} stocks in parallel batches...`)
+    const startTime = Date.now()
 
-        // Fetch real options data for this symbol
-        const optionsData = await fetchOptionsDataForSymbol(ticker.ticker)
-        const optionsMetrics = calculateOptionsMetrics(optionsData)
+    // Batch parallel fetching - 50 stocks at a time to avoid rate limits
+    const batches = chunkArray(topStocks, 50)
+
+    for (const batch of batches) {
+      // Fetch all options data for this batch in parallel
+      const optionsPromises = batch.map(ticker =>
+        ticker.ticker ? fetchOptionsDataForSymbol(ticker.ticker) : Promise.resolve(null)
+      )
+      const optionsResults = await Promise.all(optionsPromises)
+
+      // Process each ticker in the batch
+      batch.forEach((ticker, index) => {
+        if (ticker.ticker) {
+          const dayData = ticker.day || {}
+          const prevDay = ticker.prevDay || {}
+          const price = dayData.c || ticker.lastTrade?.p || 0
+
+          // Use the fetched options data
+          const optionsData = optionsResults[index]
+          const optionsMetrics = calculateOptionsMetrics(optionsData)
 
         // Calculate gamma levels from options strikes if available
         let gammaLevels = {
@@ -224,32 +247,37 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
           }
         }
 
-        stockMap.set(ticker.ticker, {
-          symbol: ticker.ticker,
-          name: ticker.ticker, // Will be updated from FMP
-          price,
-          changePercent: ticker.todaysChangePerc || 0,
-          change: ticker.todaysChange || 0,
-          volume: dayData.v || 0,
-          marketCap: ticker.marketCap || 0,
-          open: dayData.o || 0,
-          high: dayData.h || 0,
-          low: dayData.l || 0,
-          prevClose: prevDay.c || 0,
-          // Real options data from Polygon or fallback
-          gex: optionsMetrics?.gex || 0,
-          dex: optionsMetrics?.netGEX || 0,
-          vex: 0, // Would need volatility calculation
-          putCallRatio: optionsMetrics?.putCallRatio || 1.0,
-          ivRank: Math.floor(Math.random() * 100), // Would need historical IV data
-          flowScore: optionsMetrics?.flowScore || 50,
-          netPremium: optionsMetrics?.netPremium || 0,
-          darkPoolRatio: Math.random() * 50, // Would need dark pool data source
-          optionVolume: optionsMetrics?.optionVolume || 0,
-          gammaLevels
-        })
-      }
+          stockMap.set(ticker.ticker, {
+            symbol: ticker.ticker,
+            name: ticker.ticker, // Will be updated from FMP
+            price,
+            changePercent: ticker.todaysChangePerc || 0,
+            change: ticker.todaysChange || 0,
+            volume: dayData.v || 0,
+            marketCap: ticker.marketCap || 0,
+            open: dayData.o || 0,
+            high: dayData.h || 0,
+            low: dayData.l || 0,
+            prevClose: prevDay.c || 0,
+            // Real options data from Polygon or fallback
+            gex: optionsMetrics?.gex || 0,
+            dex: optionsMetrics?.netGEX || 0,
+            vex: 0, // VEX calculation not implemented
+            putCallRatio: optionsMetrics?.putCallRatio || 1.0,
+            ivRank: 0, // Removed random data - requires historical IV
+            flowScore: optionsMetrics?.flowScore || 50,
+            netPremium: optionsMetrics?.netPremium || 0,
+            darkPoolRatio: 0, // Removed random data - requires dark pool feed
+            optionVolume: optionsMetrics?.optionVolume || 0,
+            gammaLevels
+          })
+        }
+      })
     }
+
+    const elapsed = Date.now() - startTime
+    console.log(`Options data fetched in ${(elapsed / 1000).toFixed(1)}s (${topStocks.length} stocks, ${batches.length} batches)`)
+  }
 
     // Add remaining stocks with basic data (no options)
     polygonData.forEach(ticker => {

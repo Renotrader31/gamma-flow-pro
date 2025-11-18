@@ -223,7 +223,26 @@ export default function Home() {
   
   // Live stock data from API
   const [stockData, setStockData] = useState<any[]>([])
-  
+
+  // Check if US market is open (9:30 AM - 4:00 PM ET on weekdays)
+  const isMarketOpen = () => {
+    const now = new Date()
+    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+    const day = etTime.getDay()
+    const hour = etTime.getHours()
+    const minute = etTime.getMinutes()
+
+    // Market closed on weekends
+    if (day === 0 || day === 6) return false
+
+    // Market open 9:30 AM - 4:00 PM ET
+    const marketStart = 9 * 60 + 30 // 9:30 AM in minutes
+    const marketEnd = 16 * 60 // 4:00 PM in minutes
+    const currentTime = hour * 60 + minute
+
+    return currentTime >= marketStart && currentTime < marketEnd
+  }
+
   // Fetch real data from API
   useEffect(() => {
     const fetchRealData = async () => {
@@ -231,7 +250,7 @@ export default function Home() {
         setDataStatus('Fetching market data...')
         const response = await fetch('/api/stocks')
         const result = await response.json()
-        
+
         if (result.status === 'success' && result.data && result.data.length > 0) {
           const stocksWithOptions = result.data.filter((s: any) => s.gex > 0 || s.optionVolume > 0)
           console.log(`Loaded ${result.data.length} stocks from API`)
@@ -254,8 +273,13 @@ export default function Home() {
       }
     }
 
+    // Initial fetch
     fetchRealData()
-    const interval = setInterval(fetchRealData, 10000) // Update every 10 seconds for more real-time data
+
+    // Smart refresh: 60s during market hours, 5min after hours (prevents API rate limits)
+    const refreshInterval = isMarketOpen() ? 60000 : 300000
+    console.log(`Setting refresh interval: ${refreshInterval / 1000}s (market ${isMarketOpen() ? 'OPEN' : 'CLOSED'})`)
+    const interval = setInterval(fetchRealData, refreshInterval)
     return () => clearInterval(interval)
   }, [])
   
