@@ -284,7 +284,7 @@ export default function Home() {
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 15 && s.netPremium && Math.abs(s.netPremium) > 5000000 && s.optionVolume > 10000)
+        .filter(s => s.price > 15 && s.netPremium && Math.abs(s.netPremium) > 500000 && s.optionVolume > 5000)
         .sort((a, b) => Math.abs(b.netPremium || 0) - Math.abs(a.netPremium || 0))
         .slice(0, 20)
     },
@@ -296,7 +296,7 @@ export default function Home() {
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 50 && s.marketCap > 50000000000 && s.gex > 50000000 && Math.abs(s.changePercent) < 2)
+        .filter(s => s.price > 50 && s.marketCap > 10000000000 && s.gex > 5000000 && Math.abs(s.changePercent) < 2)
         .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
         .slice(0, 20)
     },
@@ -320,7 +320,7 @@ export default function Home() {
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 20 && s.optionVolume > 50000 && s.gex > 200000000)
+        .filter(s => s.price > 20 && s.optionVolume > 20000 && s.gex > 10000000)
         .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
