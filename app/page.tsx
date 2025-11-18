@@ -223,7 +223,26 @@ export default function Home() {
   
   // Live stock data from API
   const [stockData, setStockData] = useState<any[]>([])
-  
+
+  // Check if US market is open (9:30 AM - 4:00 PM ET on weekdays)
+  const isMarketOpen = () => {
+    const now = new Date()
+    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+    const day = etTime.getDay()
+    const hour = etTime.getHours()
+    const minute = etTime.getMinutes()
+
+    // Market closed on weekends
+    if (day === 0 || day === 6) return false
+
+    // Market open 9:30 AM - 4:00 PM ET
+    const marketStart = 9 * 60 + 30 // 9:30 AM in minutes
+    const marketEnd = 16 * 60 // 4:00 PM in minutes
+    const currentTime = hour * 60 + minute
+
+    return currentTime >= marketStart && currentTime < marketEnd
+  }
+
   // Fetch real data from API
   useEffect(() => {
     const fetchRealData = async () => {
@@ -231,11 +250,16 @@ export default function Home() {
         setDataStatus('Fetching market data...')
         const response = await fetch('/api/stocks')
         const result = await response.json()
-        
+
         if (result.status === 'success' && result.data && result.data.length > 0) {
+          const stocksWithOptions = result.data.filter((s: any) => s.gex > 0 || s.optionVolume > 0)
           console.log(`Loaded ${result.data.length} stocks from API`)
+          console.log(`  - ${stocksWithOptions.length} stocks have options data`)
+          console.log(`  - ${result.data.filter((s: any) => s.gex > 10000000).length} stocks have GEX > 10M`)
+          console.log(`  - ${result.data.filter((s: any) => s.optionVolume > 10000).length} stocks have optionVolume > 10K`)
+          console.log(`  - ${result.data.filter((s: any) => Math.abs(s.netPremium || 0) > 1000000).length} stocks have netPremium > 1M`)
           setStockData(result.data)
-          setDataStatus(`Live: ${result.data.length} stocks`)
+          setDataStatus(`Live: ${result.data.length} stocks (${stocksWithOptions.length} w/ options)`)
           setIsOnline(true)
         } else {
           console.log('No data from API')
@@ -249,8 +273,13 @@ export default function Home() {
       }
     }
 
+    // Initial fetch
     fetchRealData()
-    const interval = setInterval(fetchRealData, 10000) // Update every 10 seconds for more real-time data
+
+    // Smart refresh: 60s during market hours, 5min after hours (prevents API rate limits)
+    const refreshInterval = isMarketOpen() ? 60000 : 300000
+    console.log(`Setting refresh interval: ${refreshInterval / 1000}s (market ${isMarketOpen() ? 'OPEN' : 'CLOSED'})`)
+    const interval = setInterval(fetchRealData, refreshInterval)
     return () => clearInterval(interval)
   }, [])
   
@@ -261,8 +290,30 @@ export default function Home() {
     }, 1000)
     return () => clearInterval(timer)
   }, [])
-  
-  // Scanner strategies with better filtering
+
+  // Market-cap-adjusted threshold helpers
+  const getGEXThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 50000000  // Mega-cap: $50M+ GEX
+    if (marketCap > 50000000000) return 20000000   // Large-cap: $20M+ GEX
+    if (marketCap > 10000000000) return 5000000    // Mid-cap: $5M+ GEX
+    return 1000000 // Small-cap: $1M+ GEX
+  }
+
+  const getPremiumThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 10000000  // Mega-cap: $10M+ premium
+    if (marketCap > 50000000000) return 5000000    // Large-cap: $5M+ premium
+    if (marketCap > 10000000000) return 1000000    // Mid-cap: $1M+ premium
+    return 500000 // Small-cap: $500K+ premium
+  }
+
+  const getOptionVolumeThreshold = (marketCap: number) => {
+    if (marketCap > 200000000000) return 50000  // Mega-cap: 50K+ contracts
+    if (marketCap > 50000000000) return 20000   // Large-cap: 20K+ contracts
+    if (marketCap > 10000000000) return 5000    // Mid-cap: 5K+ contracts
+    return 2000 // Small-cap: 2K+ contracts
+  }
+
+  // Scanner strategies with market-cap-adjusted filtering
   const scannerStrategies = [
     {
       id: 'gammaSqueezer',
@@ -279,24 +330,31 @@ export default function Home() {
     {
       id: 'institutionalFlow',
       name: 'Institutional Flow',
-      description: 'Large premium flow indicating institutional activity',
+      description: 'Large premium flow indicating institutional activity (market-cap adjusted)',
       icon: Building2,
       color: 'text-cyan-400',
       bgColor: 'bg-cyan-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 15 && s.netPremium && Math.abs(s.netPremium) > 5000000 && s.optionVolume > 10000)
+        .filter(s => {
+          const premiumThreshold = getPremiumThreshold(s.marketCap || 0)
+          const volumeThreshold = getOptionVolumeThreshold(s.marketCap || 0)
+          return s.price > 10 && s.netPremium && Math.abs(s.netPremium) > premiumThreshold && s.optionVolume > volumeThreshold
+        })
         .sort((a, b) => Math.abs(b.netPremium || 0) - Math.abs(a.netPremium || 0))
         .slice(0, 20)
     },
     {
       id: 'portfolioDefensive',
       name: 'Portfolio Defensive',
-      description: 'Conservative blue-chip stocks with options activity',
+      description: 'Conservative blue-chip stocks with options activity (market-cap adjusted)',
       icon: Briefcase,
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 50 && s.marketCap > 50000000000 && s.gex > 50000000 && Math.abs(s.changePercent) < 2)
+        .filter(s => {
+          const gexThreshold = getGEXThreshold(s.marketCap || 0)
+          return s.price > 20 && s.marketCap > 10000000000 && s.gex > gexThreshold && Math.abs(s.changePercent || 0) < 3
+        })
         .sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0))
         .slice(0, 20)
     },
@@ -315,25 +373,29 @@ export default function Home() {
     {
       id: 'optionsWhale',
       name: 'Options Whale',
-      description: 'Massive options volume with high GEX',
+      description: 'Massive options volume with high GEX (market-cap adjusted)',
       icon: Activity,
       color: 'text-blue-400',
       bgColor: 'bg-blue-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 20 && s.optionVolume > 50000 && s.gex > 200000000)
+        .filter(s => {
+          const gexThreshold = getGEXThreshold(s.marketCap || 0)
+          const volumeThreshold = getOptionVolumeThreshold(s.marketCap || 0)
+          return s.price > 5 && s.optionVolume > volumeThreshold && s.gex > gexThreshold
+        })
         .sort((a, b) => (b.optionVolume || 0) - (a.optionVolume || 0))
         .slice(0, 20)
     },
     {
-      id: 'ivCrush',
-      name: 'IV Crush Play',
-      description: 'High IV rank for premium selling',
+      id: 'unusualActivity',
+      name: 'Unusual Activity',
+      description: 'Stocks with unusual options flow and volume',
       icon: Gauge,
       color: 'text-red-400',
       bgColor: 'bg-red-900/20',
       filter: (stocks: any[]) => stocks
-        .filter(s => s.price > 15 && s.ivRank && s.ivRank > 70 && s.volume > 500000)
-        .sort((a, b) => (b.ivRank || 0) - (a.ivRank || 0))
+        .filter(s => s.price > 5 && s.unusualActivity && s.unusualActivity > 50)
+        .sort((a, b) => (b.unusualActivity || 0) - (a.unusualActivity || 0))
         .slice(0, 20)
     },
     {
@@ -431,13 +493,14 @@ export default function Home() {
       console.log('No stock data available')
       return
     }
-    
+
     setScanLoading(prev => ({ ...prev, [strategyId]: true }))
     const strategy = scannerStrategies.find(s => s.id === strategyId)
-    
+
     if (strategy) {
       setTimeout(() => {
         const filtered = strategy.filter(stockData)
+        console.log(`Scanner "${strategy.name}": ${filtered.length} stocks found (from ${stockData.length} total stocks)`)
         setScanResults(prev => ({ ...prev, [strategyId]: filtered }))
         setScanLoading(prev => ({ ...prev, [strategyId]: false }))
       }, 500)
