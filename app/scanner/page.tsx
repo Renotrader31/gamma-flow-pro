@@ -394,13 +394,22 @@ export default function InstitutionalScanner() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-3"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Scanner
-          </Link>
+          <div className="flex items-center justify-between mb-3">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Scanner
+            </Link>
+            <Link
+              href="/liquidity-watchlist"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition text-sm font-medium"
+            >
+              <Droplets className="w-4 h-4" />
+              Liquidity Watchlist
+            </Link>
+          </div>
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold mb-2">Institutional Scanner Pro</h1>
