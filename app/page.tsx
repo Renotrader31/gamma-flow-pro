@@ -472,6 +472,14 @@ export default function Home() {
               <Briefcase className="w-5 h-5" />
               Portfolio
             </Link>
+
+            <Link
+              href="/watchlist"
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Target className="w-5 h-5" />
+              Watchlist
+            </Link>
           </div>
         </div>
 
