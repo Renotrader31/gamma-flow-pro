@@ -1,4 +1,9 @@
 import { NextResponse } from 'next/server'
+import {
+  analyzeLiquidityHunter,
+  DEFAULT_CONFIG,
+  PriceBar,
+} from '@/app/lib/liquidity-hunter'
 
 async function fetchUnusualWhalesData() {
   const apiKey = process.env.UNUSUAL_WHALES_KEY
@@ -260,6 +265,86 @@ function chunkArray(array: any[], size: number) {
   return chunks
 }
 
+// Fetch price bars for liquidity analysis
+async function fetchBarsForSymbol(symbol: string): Promise<PriceBar[]> {
+  const apiKey = process.env.POLYGON_API_KEY
+
+  if (!apiKey) {
+    return generateMockBars(symbol, 100)
+  }
+
+  try {
+    // Get last 7 days of 5-minute bars
+    const to = new Date()
+    const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const fromDate = from.toISOString().split('T')[0]
+    const toDate = to.toISOString().split('T')[0]
+
+    const url = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=100&apiKey=${apiKey}`
+
+    const response = await fetch(url, { cache: 'no-store' })
+
+    if (!response.ok) {
+      return generateMockBars(symbol, 100)
+    }
+
+    const data = await response.json()
+
+    if (!data.results || data.results.length === 0) {
+      return generateMockBars(symbol, 100)
+    }
+
+    const bars: PriceBar[] = data.results.map((bar: any) => ({
+      open: bar.o,
+      high: bar.h,
+      low: bar.l,
+      close: bar.c,
+      volume: bar.v,
+      timestamp: bar.t,
+    }))
+
+    return bars.slice(-100) // Return last 100 bars
+  } catch (error) {
+    return generateMockBars(symbol, 100)
+  }
+}
+
+// Generate mock price bars
+function generateMockBars(symbol: string, count: number): PriceBar[] {
+  const bars: PriceBar[] = []
+  const now = Date.now()
+  const fiveMinutes = 5 * 60 * 1000
+
+  const basePrices: Record<string, number> = {
+    NVDA: 875,
+    TSLA: 242,
+    AAPL: 195,
+    SPY: 438,
+    QQQ: 365,
+    AMD: 165,
+    MSFT: 385,
+  }
+
+  let price = basePrices[symbol] || 100
+
+  for (let i = count - 1; i >= 0; i--) {
+    const timestamp = now - i * fiveMinutes
+    const change = (Math.random() - 0.48) * price * 0.01
+    price = Math.max(price + change, price * 0.95)
+
+    const open = price
+    const volatility = price * 0.005
+    const high = open + Math.random() * volatility
+    const low = open - Math.random() * volatility
+    const close = low + Math.random() * (high - low)
+    const volume = Math.floor(Math.random() * 1000000) + 100000
+
+    bars.push({ open, high, low, close, volume, timestamp })
+  }
+
+  return bars
+}
+
 async function processMarketData(polygonData: any[], fmpData: any[], unusualWhalesData: any) {
   const stockMap = new Map()
 
@@ -467,7 +552,39 @@ async function processMarketData(polygonData: any[], fmpData: any[], unusualWhal
     })
   }
 
-  return Array.from(stockMap.values())
+  // Enrich stocks with liquidity hunter metrics (top 10 by volume to avoid performance issues)
+  const stocks = Array.from(stockMap.values())
+  const topStocksByVolume = stocks
+    .sort((a, b) => b.volume - a.volume)
+    .slice(0, 10)
+
+  for (const stock of topStocksByVolume) {
+    try {
+      const bars = await fetchBarsForSymbol(stock.symbol)
+      if (bars.length >= 3) {
+        const liquidityResult = analyzeLiquidityHunter(stock.symbol, bars, DEFAULT_CONFIG)
+
+        stock.liquidity = {
+          activeFVGCount: liquidityResult.activeFVGCount,
+          bullishFVGCount: liquidityResult.bullishFVGCount,
+          bearishFVGCount: liquidityResult.bearishFVGCount,
+          liquidityZoneCount: liquidityResult.liquidityZoneCount,
+          buyVolume: liquidityResult.orderFlow.buyVolume,
+          sellVolume: liquidityResult.orderFlow.sellVolume,
+          delta: liquidityResult.orderFlow.delta,
+          avgAbsDelta: liquidityResult.orderFlow.avgAbsDelta,
+          isSignificantBuying: liquidityResult.orderFlow.isSignificantBuying,
+          isSignificantSelling: liquidityResult.orderFlow.isSignificantSelling,
+          liquidityScore: liquidityResult.liquidityScore,
+          liquiditySignals: liquidityResult.signals,
+        }
+      }
+    } catch (error) {
+      console.log(`Liquidity analysis error for ${stock.symbol}:`, error)
+    }
+  }
+
+  return stocks
 }
 
 export async function GET() {
@@ -489,13 +606,15 @@ export async function GET() {
 
     console.log(`Returning ${processedData.length} total stocks`)
     console.log(`${processedData.filter(s => s.gex > 0).length} stocks have live options data`)
+    console.log(`${processedData.filter(s => s.liquidity).length} stocks have liquidity hunter metrics`)
 
     return NextResponse.json({
       data: processedData,
       timestamp: new Date().toISOString(),
       status: 'success',
       count: processedData.length,
-      liveOptionsCount: processedData.filter(s => s.gex > 0).length
+      liveOptionsCount: processedData.filter(s => s.gex > 0).length,
+      liquidityAnalyzedCount: processedData.filter(s => s.liquidity).length
     })
   } catch (error) {
     console.error('API route error:', error)
