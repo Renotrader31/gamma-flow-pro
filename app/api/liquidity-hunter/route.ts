@@ -188,15 +188,16 @@ function adjustConfigForTimeframe(
   // Daily timeframe adjustments
   return {
     ...baseConfig,
-    // Daily FVG threshold: slightly higher (gaps are more common on daily)
-    fvgThreshold: baseConfig.fvgThreshold * 1.5, // 0.5% -> 0.75%
+    // Daily FVG threshold: Keep same or slightly lower (gaps should be similar %)
+    fvgThreshold: baseConfig.fvgThreshold, // Keep at 0.5%
 
-    // Daily delta threshold: MUCH higher due to larger volume
-    // Daily volume is typically 50-100x higher than 5-min volume
-    ofDeltaThreshold: baseConfig.ofDeltaThreshold * 50, // 1000 -> 50,000
+    // Daily delta threshold: Scale based on typical volume difference
+    // For most stocks: 5-min has ~200K-500K volume, daily has ~5M-20M volume
+    // Ratio is typically 10-30x, so use 15x as middle ground
+    ofDeltaThreshold: baseConfig.ofDeltaThreshold * 15, // 1000 -> 15,000
 
-    // Daily lookback: fewer bars needed (each bar is a full day)
-    ofLookback: Math.min(baseConfig.ofLookback, 10), // Max 10 days for average
+    // Daily lookback: use more bars for better trend context
+    ofLookback: Math.max(baseConfig.ofLookback, 20), // At least 20 days (1 month)
   }
 }
 
@@ -218,15 +219,28 @@ function getLiquidityDirection(
     if (bearishSignals > bullishSignals) return 'bearish'
   }
 
-  // Medium signal: FVG imbalance with confirming delta
-  if (liquidityZones > 0) {
-    if (bullishFVGs > bearishFVGs && delta > 0) return 'bullish'
-    if (bearishFVGs > bullishFVGs && delta < 0) return 'bearish'
+  // Medium signal: Multiple FVGs in one direction with confirming delta
+  const fvgDifference = bullishFVGs - bearishFVGs
+
+  if (Math.abs(fvgDifference) >= 2) {
+    // Strong FVG imbalance (2+ more in one direction)
+    if (fvgDifference > 0) return 'bullish'
+    if (fvgDifference < 0) return 'bearish'
   }
 
-  // Weak signal: FVG imbalance only
-  if (bullishFVGs > bearishFVGs) return 'bullish'
-  if (bearishFVGs > bullishFVGs) return 'bearish'
+  if (liquidityZones > 0 && fvgDifference !== 0) {
+    // At least one liquidity zone + FVG imbalance
+    if (fvgDifference > 0 && delta > 0) return 'bullish'
+    if (fvgDifference < 0 && delta < 0) return 'bearish'
+  }
+
+  // Weaker signal: Any FVG imbalance with positive delta
+  if (fvgDifference > 0 && delta > 0) return 'bullish'
+  if (fvgDifference < 0 && delta < 0) return 'bearish'
+
+  // Very weak signal: Just FVG count (requires at least 1 FVG)
+  if (bullishFVGs > 0 && bearishFVGs === 0) return 'bullish'
+  if (bearishFVGs > 0 && bullishFVGs === 0) return 'bearish'
 
   return 'neutral'
 }
@@ -402,6 +416,29 @@ export async function GET(request: NextRequest) {
           const fiveMinResult = analyzeLiquidityHunter(symbol, fiveMinBars, fiveMinConfig)
           const dailyResult = analyzeLiquidityHunter(symbol, dailyBars, dailyConfig)
 
+          // Debug logging for direction detection
+          if (symbol === 'DOCN' || symbol === 'NVDA') {
+            console.log(`\n=== ${symbol} Analysis ===`)
+            console.log('5-Min:', {
+              bullishFVGs: fiveMinResult.bullishFVGCount,
+              bearishFVGs: fiveMinResult.bearishFVGCount,
+              delta: fiveMinResult.orderFlow.delta.toFixed(0),
+              liqZones: fiveMinResult.liquidityZoneCount,
+              signals: fiveMinResult.signals.length,
+              score: fiveMinResult.liquidityScore,
+              threshold: fiveMinConfig.ofDeltaThreshold,
+            })
+            console.log('Daily:', {
+              bullishFVGs: dailyResult.bullishFVGCount,
+              bearishFVGs: dailyResult.bearishFVGCount,
+              delta: dailyResult.orderFlow.delta.toFixed(0),
+              liqZones: dailyResult.liquidityZoneCount,
+              signals: dailyResult.signals.length,
+              score: dailyResult.liquidityScore,
+              threshold: dailyConfig.ofDeltaThreshold,
+            })
+          }
+
           // Determine direction for each timeframe
           const fiveMinDirection = getLiquidityDirection(
             fiveMinResult.bullishFVGCount,
@@ -426,6 +463,12 @@ export async function GET(request: NextRequest) {
             fiveMinResult.liquidityScore,
             dailyResult.liquidityScore
           )
+
+          // Debug alignment result
+          if (symbol === 'DOCN' || symbol === 'NVDA') {
+            console.log(`${symbol} Directions: 5min=${fiveMinDirection}, daily=${dailyDirection}`)
+            console.log(`${symbol} Alignment:`, alignment)
+          }
 
           // Use current price from API, or fall back to last 5min bar
           const price = priceData.price > 0 ? priceData.price : fiveMinBars[fiveMinBars.length - 1].close
