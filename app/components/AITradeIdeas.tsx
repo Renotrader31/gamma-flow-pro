@@ -61,6 +61,31 @@ const getExpiryDate = (daysOut: number) => {
   return expiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Smart strike calculation that ensures different strikes for spreads
+const getStrikesForSpread = (basePrice: number, lowerMultiplier: number, higherMultiplier: number): [number, number] => {
+  let lowerStrike = Math.round(basePrice * lowerMultiplier);
+  let higherStrike = Math.round(basePrice * higherMultiplier);
+  
+  // If strikes are the same due to rounding, adjust them
+  if (lowerStrike === higherStrike) {
+    // Try floor/ceil approach
+    lowerStrike = Math.floor(basePrice * lowerMultiplier);
+    higherStrike = Math.ceil(basePrice * higherMultiplier);
+    
+    // If still the same, force a difference
+    if (lowerStrike === higherStrike) {
+      higherStrike = lowerStrike + 1;
+    }
+  }
+  
+  // Ensure lower is actually lower than higher
+  if (lowerStrike >= higherStrike) {
+    higherStrike = lowerStrike + 1;
+  }
+  
+  return [lowerStrike, higherStrike];
+};
+
 // Validation helper to ensure no duplicate strike+expiration in spreads
 const validateSpread = (leg1: string, leg2: string): boolean => {
   // Extract strike and expiration from strings like "Buy 105C Jan 12"
@@ -87,8 +112,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
 
   // 1. Bullish idea - Long Call Spread (Different strikes, same expiration)
   const callSpreadExpiry = getExpiryDate(21);
-  const callSpreadBuyStrike = Math.round(basePrice * 1.05);
-  const callSpreadSellStrike = Math.round(basePrice * 1.10);
+  const [callSpreadBuyStrike, callSpreadSellStrike] = getStrikesForSpread(basePrice, 1.05, 1.10);
   const callBuyLeg = `Buy ${callSpreadBuyStrike}C ${callSpreadExpiry}`;
   const callSellLeg = `Sell ${callSpreadSellStrike}C ${callSpreadExpiry}`;
   
@@ -125,10 +149,8 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
 
   // 2. Neutral idea - Iron Condor (Four different strikes, same expiration)
   const condorExpiry = getExpiryDate(30);
-  const sellCallStrike = Math.round(basePrice * 1.10);
-  const buyCallStrike = Math.round(basePrice * 1.12);
-  const sellPutStrike = Math.round(basePrice * 0.90);
-  const buyPutStrike = Math.round(basePrice * 0.88);
+  const [buyPutStrike, sellPutStrike] = getStrikesForSpread(basePrice, 0.88, 0.90);
+  const [sellCallStrike, buyCallStrike] = getStrikesForSpread(basePrice, 1.10, 1.12);
   
   ideas.push({
     id: timestamp + 2,
@@ -161,8 +183,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
 
   // 3. Bearish idea - Bear Put Spread (Different strikes, same expiration)
   const putSpreadExpiry = getExpiryDate(14);
-  const putSpreadBuyStrike = Math.round(basePrice * 0.95);
-  const putSpreadSellStrike = Math.round(basePrice * 0.90);
+  const [putSpreadSellStrike, putSpreadBuyStrike] = getStrikesForSpread(basePrice, 0.90, 0.95);
   const putBuyLeg = `Buy ${putSpreadBuyStrike}P ${putSpreadExpiry}`;
   const putSellLeg = `Sell ${putSpreadSellStrike}P ${putSpreadExpiry}`;
   
@@ -198,6 +219,9 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   });
 
   // 4. Volatility play - Long Strangle
+  const strangleExpiry = getExpiryDate(14);
+  const [stranglePutStrike, strangleCallStrike] = getStrikesForSpread(basePrice, 0.92, 1.08);
+  
   ideas.push({
     id: timestamp + 4,
     symbol: symbol,
@@ -206,8 +230,8 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     riskReward: '1:4',
     timeframe: '1-2 weeks',
     entry: {
-      buyCall: `Buy ${Math.round(basePrice * 1.08)}C ${getExpiryDate(14)}`,
-      buyPut: `Buy ${Math.round(basePrice * 0.92)}P ${getExpiryDate(14)}`,
+      buyCall: `Buy ${strangleCallStrike}C ${strangleExpiry}`,
+      buyPut: `Buy ${stranglePutStrike}P ${strangleExpiry}`,
       netDebit: Math.round(basePrice * 0.03 * 100)
     },
     reasoning: [
