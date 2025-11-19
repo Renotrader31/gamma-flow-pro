@@ -5,10 +5,10 @@ import Link from 'next/link'
 import {
   ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Droplets,
   Activity, Zap, Target, AlertCircle, Filter, ChevronDown, ChevronUp,
-  Plus, X, Layers, DollarSign
+  Plus, X, Layers, DollarSign, CheckCircle, Clock, TrendingUpDown
 } from 'lucide-react'
 
-interface LiquidityData {
+interface TimeframeLiquidity {
   activeFVGCount: number
   bullishFVGCount: number
   bearishFVGCount: number
@@ -21,6 +21,7 @@ interface LiquidityData {
   isSignificantSelling: boolean
   liquidityScore: number
   liquiditySignals: string[]
+  direction: 'bullish' | 'bearish' | 'neutral'
 }
 
 interface Stock {
@@ -28,7 +29,11 @@ interface Stock {
   price: number
   changePercent: number
   volume: number
-  liquidity: LiquidityData
+  fiveMin: TimeframeLiquidity
+  daily: TimeframeLiquidity
+  aligned: boolean
+  alignmentStrength: number
+  alignmentDirection: 'bullish' | 'bearish' | 'neutral'
 }
 
 // Pre-configured watchlists
@@ -54,10 +59,9 @@ export default function LiquidityScanner() {
   const [currentSymbols, setCurrentSymbols] = useState<string[]>(WATCHLISTS.popular)
 
   // Filters
-  const [minLiquidityScore, setMinLiquidityScore] = useState(50)
-  const [minFVGCount, setMinFVGCount] = useState(1)
-  const [showOnlyLiquidityZones, setShowOnlyLiquidityZones] = useState(false)
-  const [showOnlySignals, setShowOnlySignals] = useState(false)
+  const [minAlignmentStrength, setMinAlignmentStrength] = useState(50)
+  const [showAlignedOnly, setShowAlignedOnly] = useState(false)
+  const [filterDirection, setFilterDirection] = useState<'all' | 'bullish' | 'bearish'>('all')
 
   // Auto-refresh
   const [isAutoRefresh, setIsAutoRefresh] = useState(false)
@@ -135,17 +139,6 @@ export default function LiquidityScanner() {
     fetchData(symbols)
   }
 
-  // Add single symbol
-  const addSymbol = (symbol: string) => {
-    const s = symbol.trim().toUpperCase()
-    if (s && !currentSymbols.includes(s)) {
-      const newSymbols = [...currentSymbols, s]
-      setCurrentSymbols(newSymbols)
-      setActiveWatchlist('custom')
-      fetchData(newSymbols)
-    }
-  }
-
   // Remove symbol
   const removeSymbol = (symbol: string) => {
     const newSymbols = currentSymbols.filter(s => s !== symbol)
@@ -158,13 +151,19 @@ export default function LiquidityScanner() {
   }
 
   // Filter stocks
-  const filteredStocks = stocks.filter(stock => {
-    if (stock.liquidity.liquidityScore < minLiquidityScore) return false
-    if (stock.liquidity.activeFVGCount < minFVGCount) return false
-    if (showOnlyLiquidityZones && stock.liquidity.liquidityZoneCount === 0) return false
-    if (showOnlySignals && stock.liquidity.liquiditySignals.length === 0) return false
-    return true
-  }).sort((a, b) => b.liquidity.liquidityScore - a.liquidity.liquidityScore)
+  const filteredStocks = stocks
+    .filter(stock => {
+      if (showAlignedOnly && !stock.aligned) return false
+      if (stock.alignmentStrength < minAlignmentStrength) return false
+      if (filterDirection !== 'all' && stock.alignmentDirection !== filterDirection) return false
+      return true
+    })
+    .sort((a, b) => {
+      // Sort by alignment first, then by strength
+      if (a.aligned && !b.aligned) return -1
+      if (!a.aligned && b.aligned) return 1
+      return b.alignmentStrength - a.alignmentStrength
+    })
 
   const formatNumber = (num: number) => {
     if (num >= 1e9) return `${(num / 1e9).toFixed(2)}B`
@@ -172,6 +171,20 @@ export default function LiquidityScanner() {
     if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`
     return num.toFixed(0)
   }
+
+  const getDirectionBadge = (direction: 'bullish' | 'bearish' | 'neutral') => {
+    if (direction === 'bullish') {
+      return <span className="text-green-400 font-semibold">BULLISH</span>
+    } else if (direction === 'bearish') {
+      return <span className="text-red-400 font-semibold">BEARISH</span>
+    } else {
+      return <span className="text-gray-500">NEUTRAL</span>
+    }
+  }
+
+  const alignedCount = stocks.filter(s => s.aligned).length
+  const bullishAlignedCount = stocks.filter(s => s.aligned && s.alignmentDirection === 'bullish').length
+  const bearishAlignedCount = stocks.filter(s => s.aligned && s.alignmentDirection === 'bearish').length
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white p-4 md:p-8">
@@ -185,10 +198,10 @@ export default function LiquidityScanner() {
             <div>
               <h1 className="text-3xl font-bold flex items-center gap-3">
                 <Droplets className="text-cyan-400" size={32} />
-                Liquidity Hunter Scanner
+                Liquidity Hunter - Multi-Timeframe Scanner
               </h1>
               <p className="text-gray-400 text-sm mt-1">
-                FVG Detection & Order Flow Analysis - Custom Symbol Tracking
+                5-Minute vs Daily Alignment • FVG Detection & Order Flow Analysis
               </p>
             </div>
           </div>
@@ -218,29 +231,30 @@ export default function LiquidityScanner() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-xs mb-1">Symbols Tracked</div>
+            <div className="text-gray-400 text-xs mb-1">Symbols</div>
             <div className="text-2xl font-bold">{currentSymbols.length}</div>
           </div>
 
-          <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-xs mb-1">Showing Results</div>
-            <div className="text-2xl font-bold text-cyan-400">{filteredStocks.length}</div>
+          <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-cyan-700/50">
+            <div className="text-gray-400 text-xs mb-1">Aligned</div>
+            <div className="text-2xl font-bold text-cyan-400">{alignedCount}</div>
+          </div>
+
+          <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-green-700/50">
+            <div className="text-gray-400 text-xs mb-1">Bullish</div>
+            <div className="text-2xl font-bold text-green-400">{bullishAlignedCount}</div>
+          </div>
+
+          <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-red-700/50">
+            <div className="text-gray-400 text-xs mb-1">Bearish</div>
+            <div className="text-2xl font-bold text-red-400">{bearishAlignedCount}</div>
           </div>
 
           <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-xs mb-1">Liquidity Zones</div>
-            <div className="text-2xl font-bold text-orange-400">
-              {stocks.reduce((sum, s) => sum + s.liquidity.liquidityZoneCount, 0)}
-            </div>
-          </div>
-
-          <div className="bg-gray-800/50 backdrop-blur rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-xs mb-1">Active Signals</div>
-            <div className="text-2xl font-bold text-green-400">
-              {stocks.reduce((sum, s) => sum + s.liquidity.liquiditySignals.length, 0)}
-            </div>
+            <div className="text-gray-400 text-xs mb-1">Showing</div>
+            <div className="text-2xl font-bold text-white">{filteredStocks.length}</div>
           </div>
         </div>
 
@@ -266,9 +280,7 @@ export default function LiquidityScanner() {
               </button>
             ))}
             {activeWatchlist === 'custom' && (
-              <button
-                className="px-4 py-2 rounded-lg bg-purple-600 text-white"
-              >
+              <button className="px-4 py-2 rounded-lg bg-purple-600 text-white">
                 Custom ({currentSymbols.length})
               </button>
             )}
@@ -327,56 +339,67 @@ export default function LiquidityScanner() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div>
               <label className="text-sm text-gray-400 block mb-2">
-                Min Liquidity Score: {minLiquidityScore}
+                Min Alignment Strength: {minAlignmentStrength}
               </label>
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={minLiquidityScore}
-                onChange={(e) => setMinLiquidityScore(Number(e.target.value))}
+                value={minAlignmentStrength}
+                onChange={(e) => setMinAlignmentStrength(Number(e.target.value))}
                 className="w-full"
               />
             </div>
 
-            <div>
+            <div className="flex items-center gap-2 mt-6">
+              <input
+                type="checkbox"
+                id="alignedOnly"
+                checked={showAlignedOnly}
+                onChange={(e) => setShowAlignedOnly(e.target.checked)}
+                className="w-5 h-5"
+              />
+              <label htmlFor="alignedOnly" className="text-sm">
+                Aligned Only
+              </label>
+            </div>
+
+            <div className="col-span-2">
               <label className="text-sm text-gray-400 block mb-2">
-                Min FVG Count: {minFVGCount}
+                Filter by Direction
               </label>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                value={minFVGCount}
-                onChange={(e) => setMinFVGCount(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 mt-6">
-              <input
-                type="checkbox"
-                id="liquidityZonesOnly"
-                checked={showOnlyLiquidityZones}
-                onChange={(e) => setShowOnlyLiquidityZones(e.target.checked)}
-                className="w-5 h-5"
-              />
-              <label htmlFor="liquidityZonesOnly" className="text-sm">
-                Liquidity Zones Only
-              </label>
-            </div>
-
-            <div className="flex items-center gap-2 mt-6">
-              <input
-                type="checkbox"
-                id="signalsOnly"
-                checked={showOnlySignals}
-                onChange={(e) => setShowOnlySignals(e.target.checked)}
-                className="w-5 h-5"
-              />
-              <label htmlFor="signalsOnly" className="text-sm">
-                Active Signals Only
-              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFilterDirection('all')}
+                  className={`px-4 py-2 rounded-lg transition ${
+                    filterDirection === 'all'
+                      ? 'bg-cyan-600 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setFilterDirection('bullish')}
+                  className={`px-4 py-2 rounded-lg transition ${
+                    filterDirection === 'bullish'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
+                  Bullish
+                </button>
+                <button
+                  onClick={() => setFilterDirection('bearish')}
+                  className={`px-4 py-2 rounded-lg transition ${
+                    filterDirection === 'bearish'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
+                  Bearish
+                </button>
+              </div>
             </div>
           </div>
 
@@ -405,7 +428,6 @@ export default function LiquidityScanner() {
                     onChange={(e) => setFvgThreshold(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Minimum gap size as % of price</p>
                 </div>
 
                 <div>
@@ -421,7 +443,6 @@ export default function LiquidityScanner() {
                     onChange={(e) => setDeltaThreshold(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Significant order flow delta</p>
                 </div>
 
                 <div>
@@ -437,7 +458,6 @@ export default function LiquidityScanner() {
                     onChange={(e) => setLiqMultiplier(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Delta multiplier for liquidity zones</p>
                 </div>
 
                 <div className="col-span-full">
@@ -461,27 +481,26 @@ export default function LiquidityScanner() {
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Symbol</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Price</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Change</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Liq Score</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">FVGs (B/B)</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Liq Zones</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Order Flow</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Delta</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold">Signals</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Aligned</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Strength</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Direction</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">5-Min</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Daily</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold">Trade</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold"></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                       <RefreshCw className="animate-spin inline-block mr-2" size={20} />
-                      Scanning {currentSymbols.length} symbols...
+                      Scanning {currentSymbols.length} symbols across 2 timeframes...
                     </td>
                   </tr>
                 ) : filteredStocks.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                       {stocks.length === 0
                         ? 'No data yet. Click "Scan Now" to analyze symbols.'
                         : 'No stocks match the current filters.'}
@@ -490,72 +509,64 @@ export default function LiquidityScanner() {
                 ) : (
                   filteredStocks.map((stock) => (
                     <React.Fragment key={stock.symbol}>
-                      <tr className="border-t border-gray-700 hover:bg-gray-700/30 transition">
+                      <tr className={`border-t transition ${
+                        stock.aligned
+                          ? 'border-cyan-700/50 bg-cyan-500/5 hover:bg-cyan-500/10'
+                          : 'border-gray-700 hover:bg-gray-700/30'
+                      }`}>
                         <td className="px-4 py-3">
                           <div className="font-semibold text-cyan-400">{stock.symbol}</div>
+                          <div className="text-xs text-gray-500">{stock.changePercent.toFixed(2)}%</div>
                         </td>
                         <td className="px-4 py-3 font-mono">${stock.price.toFixed(2)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`flex items-center gap-1 ${
-                            stock.changePercent >= 0 ? 'text-green-400' : 'text-red-400'
-                          }`}>
-                            {stock.changePercent >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                            {stock.changePercent.toFixed(2)}%
-                          </span>
+                        <td className="px-4 py-3 text-center">
+                          {stock.aligned ? (
+                            <CheckCircle className="inline-block text-cyan-400" size={20} />
+                          ) : (
+                            <X className="inline-block text-gray-600" size={20} />
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
-                            stock.liquidity.liquidityScore >= 80 ? 'bg-green-500/20 text-green-400' :
-                            stock.liquidity.liquidityScore >= 60 ? 'bg-cyan-500/20 text-cyan-400' :
-                            stock.liquidity.liquidityScore >= 40 ? 'bg-yellow-500/20 text-yellow-400' :
+                            stock.alignmentStrength >= 70 ? 'bg-green-500/20 text-green-400' :
+                            stock.alignmentStrength >= 50 ? 'bg-cyan-500/20 text-cyan-400' :
+                            stock.alignmentStrength >= 30 ? 'bg-yellow-500/20 text-yellow-400' :
                             'bg-gray-500/20 text-gray-400'
                           }`}>
-                            {stock.liquidity.liquidityScore}
+                            {stock.alignmentStrength}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <div className="text-sm">
-                            <span className="text-green-400">{stock.liquidity.bullishFVGCount}</span>
-                            {' / '}
-                            <span className="text-red-400">{stock.liquidity.bearishFVGCount}</span>
+                          {getDirectionBadge(stock.alignmentDirection)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="text-xs">
+                            <div className={stock.fiveMin.direction === 'bullish' ? 'text-green-400' : stock.fiveMin.direction === 'bearish' ? 'text-red-400' : 'text-gray-500'}>
+                              {stock.fiveMin.direction.toUpperCase()}
+                            </div>
+                            <div className="text-gray-500">Score: {stock.fiveMin.liquidityScore}</div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {stock.liquidity.liquidityZoneCount > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-orange-400 font-semibold">
-                              <Target size={16} />
-                              {stock.liquidity.liquidityZoneCount}
-                            </span>
-                          ) : (
-                            <span className="text-gray-500">—</span>
-                          )}
+                          <div className="text-xs">
+                            <div className={stock.daily.direction === 'bullish' ? 'text-green-400' : stock.daily.direction === 'bearish' ? 'text-red-400' : 'text-gray-500'}>
+                              {stock.daily.direction.toUpperCase()}
+                            </div>
+                            <div className="text-gray-500">Score: {stock.daily.liquidityScore}</div>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {stock.liquidity.isSignificantBuying ? (
-                            <span className="text-green-400 flex items-center justify-center gap-1 font-semibold">
-                              <Zap size={16} /> BUY
-                            </span>
-                          ) : stock.liquidity.isSignificantSelling ? (
-                            <span className="text-red-400 flex items-center justify-center gap-1 font-semibold">
-                              <Zap size={16} /> SELL
-                            </span>
+                          {stock.aligned && stock.alignmentStrength >= 60 ? (
+                            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
+                              stock.alignmentDirection === 'bullish'
+                                ? 'bg-green-500/30 text-green-300 border border-green-500/50'
+                                : 'bg-red-500/30 text-red-300 border border-red-500/50'
+                            }`}>
+                              <Target size={14} />
+                              {stock.alignmentDirection === 'bullish' ? 'LONG' : 'SHORT'}
+                            </div>
                           ) : (
-                            <span className="text-gray-500">Neutral</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center font-mono text-sm">
-                          <span className={stock.liquidity.delta >= 0 ? 'text-green-400' : 'text-red-400'}>
-                            {formatNumber(stock.liquidity.delta)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {stock.liquidity.liquiditySignals.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded-full text-sm font-semibold">
-                              <AlertCircle size={14} />
-                              {stock.liquidity.liquiditySignals.length}
-                            </span>
-                          ) : (
-                            <span className="text-gray-500">—</span>
+                            <span className="text-gray-600 text-xs">WAIT</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -568,108 +579,131 @@ export default function LiquidityScanner() {
                         </td>
                       </tr>
                       {expandedRow === stock.symbol && (
-                        <tr className="border-t border-gray-700 bg-gray-900/50">
-                          <td colSpan={10} className="px-4 py-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                              {/* Order Flow Details */}
-                              <div className="bg-gray-800/50 rounded-lg p-4">
-                                <h4 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
-                                  <Activity size={16} />
-                                  Order Flow Analysis
+                        <tr className="border-t border-gray-700 bg-gray-900/70">
+                          <td colSpan={9} className="px-4 py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                              {/* 5-Minute Timeframe */}
+                              <div className="bg-gray-800/50 rounded-lg p-4 border border-green-700/30">
+                                <h4 className="text-sm font-semibold text-green-400 mb-3 flex items-center gap-2">
+                                  <Clock size={16} />
+                                  5-Minute Timeframe
                                 </h4>
-                                <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Buy Volume:</span>
-                                    <span className="font-mono text-green-400">{formatNumber(stock.liquidity.buyVolume)}</span>
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <span className="text-gray-400">Direction:</span>
+                                      <div className="mt-1">{getDirectionBadge(stock.fiveMin.direction)}</div>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Liquidity Score:</span>
+                                      <div className="mt-1 font-semibold text-cyan-400">{stock.fiveMin.liquidityScore}</div>
+                                    </div>
                                   </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Sell Volume:</span>
-                                    <span className="font-mono text-red-400">{formatNumber(stock.liquidity.sellVolume)}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-700 pt-2">
-                                    <span className="text-gray-400">Current Delta:</span>
-                                    <span className={`font-mono font-semibold ${stock.liquidity.delta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                      {formatNumber(stock.liquidity.delta)}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Avg Delta:</span>
-                                    <span className="font-mono">{formatNumber(stock.liquidity.avgAbsDelta)}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Delta Ratio:</span>
-                                    <span className="font-mono">
-                                      {(Math.abs(stock.liquidity.delta) / (stock.liquidity.avgAbsDelta || 1)).toFixed(2)}x
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* FVG Details */}
-                              <div className="bg-gray-800/50 rounded-lg p-4">
-                                <h4 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
-                                  <Layers size={16} />
-                                  Fair Value Gaps
-                                </h4>
-                                <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Total Active:</span>
-                                    <span className="font-semibold">{stock.liquidity.activeFVGCount}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-green-400">Bullish FVGs:</span>
-                                    <span className="font-semibold">{stock.liquidity.bullishFVGCount}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-red-400">Bearish FVGs:</span>
-                                    <span className="font-semibold">{stock.liquidity.bearishFVGCount}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-700 pt-2">
-                                    <span className="text-orange-400">Liquidity Zones:</span>
-                                    <span className="font-semibold text-orange-400">{stock.liquidity.liquidityZoneCount}</span>
-                                  </div>
-                                  <div className="mt-3 text-xs text-gray-500">
-                                    {stock.liquidity.liquidityZoneCount > 0
-                                      ? `${stock.liquidity.liquidityZoneCount} zone(s) with strong institutional interest`
-                                      : 'No high-delta liquidity zones detected'}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Active Signals */}
-                              <div className="bg-gray-800/50 rounded-lg p-4">
-                                <h4 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
-                                  <AlertCircle size={16} />
-                                  Active Signals ({stock.liquidity.liquiditySignals.length})
-                                </h4>
-                                {stock.liquidity.liquiditySignals.length > 0 ? (
-                                  <div className="space-y-2">
-                                    {stock.liquidity.liquiditySignals.map((signal, idx) => (
-                                      <div
-                                        key={idx}
-                                        className={`text-sm px-3 py-2 rounded ${
-                                          signal.includes('BULLISH')
-                                            ? 'bg-green-500/10 text-green-300 border border-green-500/30'
-                                            : 'bg-red-500/10 text-red-300 border border-red-500/30'
-                                        }`}
-                                      >
-                                        {signal}
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <span className="text-gray-400">FVGs (B/B):</span>
+                                      <div className="mt-1">
+                                        <span className="text-green-400">{stock.fiveMin.bullishFVGCount}</span> / <span className="text-red-400">{stock.fiveMin.bearishFVGCount}</span>
                                       </div>
-                                    ))}
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Liq Zones:</span>
+                                      <div className="mt-1 font-semibold text-orange-400">{stock.fiveMin.liquidityZoneCount}</div>
+                                    </div>
                                   </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500 py-4 text-center">
-                                    No active liquidity signals
+                                  <div className="text-sm">
+                                    <span className="text-gray-400">Delta:</span>
+                                    <div className="mt-1">
+                                      <span className={`font-mono font-semibold ${stock.fiveMin.delta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {formatNumber(stock.fiveMin.delta)}
+                                      </span>
+                                    </div>
                                   </div>
-                                )}
+                                  {stock.fiveMin.liquiditySignals.length > 0 && (
+                                    <div>
+                                      <span className="text-gray-400 text-sm">Signals:</span>
+                                      <div className="mt-1 space-y-1">
+                                        {stock.fiveMin.liquiditySignals.map((signal, idx) => (
+                                          <div key={idx} className="text-xs bg-cyan-500/10 text-cyan-300 px-2 py-1 rounded">
+                                            {signal}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
 
-                                {stock.liquidity.liquidityScore >= 70 && (
-                                  <div className="mt-3 p-2 bg-cyan-500/10 border border-cyan-500/30 rounded text-xs text-cyan-300">
-                                    <strong>High liquidity score</strong> - Strong market interest detected
+                              {/* Daily Timeframe */}
+                              <div className="bg-gray-800/50 rounded-lg p-4 border border-blue-700/30">
+                                <h4 className="text-sm font-semibold text-blue-400 mb-3 flex items-center gap-2">
+                                  <TrendingUpDown size={16} />
+                                  Daily Timeframe
+                                </h4>
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <span className="text-gray-400">Direction:</span>
+                                      <div className="mt-1">{getDirectionBadge(stock.daily.direction)}</div>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Liquidity Score:</span>
+                                      <div className="mt-1 font-semibold text-cyan-400">{stock.daily.liquidityScore}</div>
+                                    </div>
                                   </div>
-                                )}
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <span className="text-gray-400">FVGs (B/B):</span>
+                                      <div className="mt-1">
+                                        <span className="text-green-400">{stock.daily.bullishFVGCount}</span> / <span className="text-red-400">{stock.daily.bearishFVGCount}</span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Liq Zones:</span>
+                                      <div className="mt-1 font-semibold text-orange-400">{stock.daily.liquidityZoneCount}</div>
+                                    </div>
+                                  </div>
+                                  <div className="text-sm">
+                                    <span className="text-gray-400">Delta:</span>
+                                    <div className="mt-1">
+                                      <span className={`font-mono font-semibold ${stock.daily.delta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {formatNumber(stock.daily.delta)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {stock.daily.liquiditySignals.length > 0 && (
+                                    <div>
+                                      <span className="text-gray-400 text-sm">Signals:</span>
+                                      <div className="mt-1 space-y-1">
+                                        {stock.daily.liquiditySignals.map((signal, idx) => (
+                                          <div key={idx} className="text-xs bg-cyan-500/10 text-cyan-300 px-2 py-1 rounded">
+                                            {signal}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
+
+                            {/* Alignment Summary */}
+                            {stock.aligned && (
+                              <div className="mt-4 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <CheckCircle className="text-cyan-400" size={20} />
+                                  <span className="font-semibold text-cyan-400">TIMEFRAME ALIGNMENT DETECTED</span>
+                                </div>
+                                <div className="text-sm text-gray-300">
+                                  Both 5-minute and daily timeframes are showing <strong className={stock.alignmentDirection === 'bullish' ? 'text-green-400' : 'text-red-400'}>{stock.alignmentDirection.toUpperCase()}</strong> signals with an alignment strength of <strong className="text-cyan-400">{stock.alignmentStrength}/100</strong>.
+                                  {stock.alignmentStrength >= 70 && (
+                                    <span className="block mt-2 text-yellow-300">
+                                      ⚡ <strong>High-probability setup!</strong> Consider {stock.alignmentDirection === 'bullish' ? 'LONG' : 'SHORT'} entry with proper risk management.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -686,6 +720,7 @@ export default function LiquidityScanner() {
           <div className="mt-4 text-center text-sm text-gray-500">
             Last updated: {lastUpdate.toLocaleTimeString()} |
             Showing {filteredStocks.length} of {stocks.length} symbols |
+            {alignedCount} aligned setups |
             Auto-refresh: {isAutoRefresh ? 'ON (60s)' : 'OFF'}
           </div>
         )}
