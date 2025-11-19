@@ -174,6 +174,33 @@ async function fetchBarsForSymbol(symbol: string): Promise<PriceBar[]> {
 }
 
 /**
+ * Adjust configuration for different timeframes
+ * Daily bars need different thresholds than intraday bars
+ */
+function adjustConfigForTimeframe(
+  baseConfig: LiquidityHunterConfig,
+  timeframe: '5min' | 'daily'
+): LiquidityHunterConfig {
+  if (timeframe === '5min') {
+    return baseConfig
+  }
+
+  // Daily timeframe adjustments
+  return {
+    ...baseConfig,
+    // Daily FVG threshold: slightly higher (gaps are more common on daily)
+    fvgThreshold: baseConfig.fvgThreshold * 1.5, // 0.5% -> 0.75%
+
+    // Daily delta threshold: MUCH higher due to larger volume
+    // Daily volume is typically 50-100x higher than 5-min volume
+    ofDeltaThreshold: baseConfig.ofDeltaThreshold * 50, // 1000 -> 50,000
+
+    // Daily lookback: fewer bars needed (each bar is a full day)
+    ofLookback: Math.min(baseConfig.ofLookback, 10), // Max 10 days for average
+  }
+}
+
+/**
  * Determine liquidity direction based on analysis
  */
 function getLiquidityDirection(
@@ -340,13 +367,17 @@ export async function GET(request: NextRequest) {
 
     console.log(`Analyzing liquidity for ${symbols.length} symbols: ${symbols.join(', ')}`)
 
-    // Parse custom config if provided
+    // Parse custom config if provided (these are base values for 5-min)
     const config: LiquidityHunterConfig = {
       ...DEFAULT_CONFIG,
       fvgThreshold: parseFloat(searchParams.get('fvgThreshold') || '0.5'),
       ofDeltaThreshold: parseFloat(searchParams.get('deltaThreshold') || '1000'),
       liqDeltaMultiplier: parseFloat(searchParams.get('liqMultiplier') || '1.5'),
     }
+
+    console.log(`Base config (5-min): FVG=${config.fvgThreshold}%, Delta=${config.ofDeltaThreshold}, LiqMult=${config.liqDeltaMultiplier}x`)
+    const dailyConfigPreview = adjustConfigForTimeframe(config, 'daily')
+    console.log(`Daily config: FVG=${dailyConfigPreview.fvgThreshold}%, Delta=${dailyConfigPreview.ofDeltaThreshold}, Lookback=${dailyConfigPreview.ofLookback}`)
 
     // Analyze each symbol in parallel
     const results = await Promise.all(
@@ -364,9 +395,12 @@ export async function GET(request: NextRequest) {
             return null
           }
 
-          // Run liquidity analysis on both timeframes
-          const fiveMinResult = analyzeLiquidityHunter(symbol, fiveMinBars, config)
-          const dailyResult = analyzeLiquidityHunter(symbol, dailyBars, config)
+          // Run liquidity analysis on both timeframes with adjusted configs
+          const fiveMinConfig = adjustConfigForTimeframe(config, '5min')
+          const dailyConfig = adjustConfigForTimeframe(config, 'daily')
+
+          const fiveMinResult = analyzeLiquidityHunter(symbol, fiveMinBars, fiveMinConfig)
+          const dailyResult = analyzeLiquidityHunter(symbol, dailyBars, dailyConfig)
 
           // Determine direction for each timeframe
           const fiveMinDirection = getLiquidityDirection(
