@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unified Watchlist - Liquidity Hunter + Decision Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f0f 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header p {
+      color: #9ca3af;
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    /* Buttons */
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 500;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #0891b2;
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #0e7490;
+    }
+
+    .btn-secondary {
+      background: #374151;
+      color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #4b5563;
+    }
+
+    .btn-active {
+      background: #0891b2 !important;
+    }
+
+    .btn-sm {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: rgba(55, 65, 81, 0.3);
+      backdrop-filter: blur(10px);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      border: 1px solid #374151;
+    }
+
+    .stat-label {
+      color: #9ca3af;
+      font-size: 0.75rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+
+    .stat-cyan { color: #06b6d4; border-color: rgba(6, 182, 212, 0.5); }
+    .stat-green { color: #22c55e; border-color: rgba(34, 197, 94, 0.5); }
+    .stat-red { color: #ef4444; border-color: rgba(239, 68, 68, 0.5); }
+
+    /* Card */
+    .card {
+      background: rgba(55, 65, 81, 0.3);
+      backdrop-filter: blur(10px);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      border: 1px solid #374151;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #06b6d4;
+    }
+
+    /* Watchlists */
+    .watchlist-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .watchlist-buttons button {
+      text-transform: capitalize;
+    }
+
+    .symbol-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 0.75rem;
+      background: #374151;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+    }
+
+    .chip button {
+      padding: 0;
+      background: none;
+      color: #9ca3af;
+      margin: 0;
+    }
+
+    .chip button:hover {
+      color: white;
+    }
+
+    /* Input */
+    input[type="text"] {
+      flex: 1;
+      padding: 0.5rem 1rem;
+      background: #111827;
+      border: 1px solid #4b5563;
+      border-radius: 0.5rem;
+      color: white;
+      font-size: 0.875rem;
+      min-width: 200px;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #06b6d4;
+    }
+
+    input[type="text"]::placeholder {
+      color: #6b7280;
+    }
+
+    input[type="checkbox"] {
+      width: 1.25rem;
+      height: 1.25rem;
+      cursor: pointer;
+    }
+
+    /* View Mode & Filters */
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+
+    .filter-group label {
+      display: block;
+      color: #9ca3af;
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .button-group button {
+      flex: 1;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    /* Table */
+    .table-container {
+      background: rgba(55, 65, 81, 0.3);
+      backdrop-filter: blur(10px);
+      border-radius: 0.5rem;
+      border: 1px solid #374151;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: rgba(17, 24, 39, 0.5);
+    }
+
+    th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+
+    th.center {
+      text-align: center;
+    }
+
+    tbody tr {
+      border-top: 1px solid #374151;
+      transition: background 0.2s;
+    }
+
+    tbody tr:hover {
+      background: rgba(55, 65, 81, 0.3);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+    }
+
+    td.center {
+      text-align: center;
+    }
+
+    .symbol {
+      font-weight: 600;
+      color: #06b6d4;
+    }
+
+    .price {
+      font-family: 'Courier New', monospace;
+    }
+
+    .positive {
+      color: #22c55e;
+    }
+
+    .negative {
+      color: #ef4444;
+    }
+
+    /* Expanded Row */
+    .expanded-content {
+      background: rgba(17, 24, 39, 0.7);
+      border-top: 1px solid #374151;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      padding: 1rem;
+    }
+
+    .analysis-panel {
+      background: rgba(55, 65, 81, 0.5);
+      border-radius: 0.5rem;
+      padding: 1rem;
+    }
+
+    .analysis-panel.liquidity {
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+
+    .analysis-panel.dashboard {
+      border: 1px solid rgba(147, 51, 234, 0.3);
+    }
+
+    .analysis-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    .analysis-title.liquidity {
+      color: #06b6d4;
+    }
+
+    .analysis-title.dashboard {
+      color: #a855f7;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      font-size: 0.875rem;
+    }
+
+    .metric-label {
+      color: #9ca3af;
+      margin-bottom: 0.25rem;
+    }
+
+    .metric-value {
+      font-weight: 500;
+    }
+
+    .alert-box {
+      margin-top: 0.75rem;
+      padding: 0.5rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+    }
+
+    .alert-cyan {
+      background: rgba(6, 182, 212, 0.1);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      color: #67e8f9;
+    }
+
+    .alert-green {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .alert-red {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    /* Action Colors */
+    .action-max-long { color: #22c55e; }
+    .action-strong-long { color: #4ade80; }
+    .action-long { color: #06b6d4; }
+    .action-max-short { color: #ef4444; }
+    .action-strong-short { color: #f97316; }
+    .action-short { color: #eab308; }
+    .action-prohibited { color: #dc2626; }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: #9ca3af;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 2px solid #374151;
+      border-top-color: #06b6d4;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 0.5rem;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+
+    /* Icons */
+    .icon {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+
+    .check-icon { color: #06b6d4; }
+    .x-icon { color: #4b5563; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <h1>
+          <span>💧</span>
+          Unified Watchlist
+        </h1>
+        <p>Combined Liquidity Hunter + Decision Dashboard Analysis</p>
+      </div>
+      <div class="controls">
+        <button id="autoRefreshBtn" class="btn-secondary">
+          <span id="autoRefreshIcon">⏸</span>
+          <span id="autoRefreshText">Manual</span>
+        </button>
+        <button id="scanBtn" class="btn-primary">
+          <span>🔄</span>
+          Scan Now
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Symbols</div>
+        <div class="stat-value" id="symbolCount">0</div>
+      </div>
+      <div class="stat-card stat-cyan">
+        <div class="stat-label">Aligned</div>
+        <div class="stat-value" id="alignedCount">0</div>
+      </div>
+      <div class="stat-card stat-green">
+        <div class="stat-label">Bullish</div>
+        <div class="stat-value" id="bullishCount">0</div>
+      </div>
+      <div class="stat-card stat-red">
+        <div class="stat-label">Bearish</div>
+        <div class="stat-value" id="bearishCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Showing</div>
+        <div class="stat-value" id="showingCount">0</div>
+      </div>
+    </div>
+
+    <!-- Watchlists -->
+    <div class="card">
+      <div class="card-title">📋 Watchlists</div>
+
+      <div class="watchlist-buttons" id="watchlistButtons"></div>
+
+      <div style="display: flex; gap: 0.5rem;">
+        <input
+          type="text"
+          id="customSymbols"
+          placeholder="Enter symbols (e.g., AAPL, TSLA, NVDA)"
+        />
+        <button class="btn-primary" id="loadCustomBtn">
+          <span>➕</span>
+          Load
+        </button>
+      </div>
+
+      <div class="symbol-chips" id="symbolChips"></div>
+    </div>
+
+    <!-- View Mode & Filters -->
+    <div class="card">
+      <div class="card-title">🔍 View & Filters</div>
+
+      <div class="filter-grid">
+        <div class="filter-group">
+          <label>Analysis Mode</label>
+          <div class="button-group">
+            <button class="btn-secondary btn-sm" data-view="both">Both</button>
+            <button class="btn-secondary btn-sm" data-view="liquidity">Liquidity</button>
+            <button class="btn-secondary btn-sm" data-view="dashboard">Dashboard</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label>Direction Filter</label>
+          <div class="button-group">
+            <button class="btn-secondary btn-sm" data-direction="all">All</button>
+            <button class="btn-secondary btn-sm" data-direction="bullish">Bullish</button>
+            <button class="btn-secondary btn-sm" data-direction="bearish">Bearish</button>
+          </div>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="alignedOnlyCheckbox" />
+          <label for="alignedOnlyCheckbox" style="margin: 0;">Aligned Only</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="table-container">
+      <div style="overflow-x: auto;">
+        <table>
+          <thead id="tableHead"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer" id="footer">
+      Configure API endpoint below and click Scan Now
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const API_BASE_URL = window.location.origin; // Change this if APIs are hosted elsewhere
+
+    // Watchlists
+    const WATCHLISTS = {
+      popular: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'AMD', 'MSFT', 'GOOGL', 'AMZN', 'META'],
+      tech: ['NVDA', 'AMD', 'INTC', 'TSM', 'AVGO', 'QCOM', 'MU', 'AMAT', 'LRCX', 'KLAC'],
+      memes: ['GME', 'AMC', 'PLTR', 'SOFI', 'HOOD', 'RIVN', 'LCID', 'NIO', 'COIN'],
+      semiconductors: ['NVDA', 'AMD', 'INTC', 'TSM', 'AVGO', 'QCOM', 'MU', 'AMAT', 'LRCX', 'ASML'],
+      etfs: ['SPY', 'QQQ', 'IWM', 'DIA', 'SOXL', 'TQQQ', 'SPXL', 'ARKK', 'GLD', 'TLT'],
+    };
+
+    // State
+    let stocks = [];
+    let currentSymbols = WATCHLISTS.popular;
+    let activeWatchlist = 'popular';
+    let viewMode = 'both';
+    let filterDirection = 'all';
+    let showAlignedOnly = false;
+    let isAutoRefresh = false;
+    let autoRefreshInterval = null;
+    let expandedRow = null;
+    let isLoading = false;
+    let lastUpdate = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeWatchlistButtons();
+      initializeViewButtons();
+      initializeDirectionButtons();
+      initializeEventListeners();
+      fetchData();
+    });
+
+    function initializeWatchlistButtons() {
+      const container = document.getElementById('watchlistButtons');
+      Object.keys(WATCHLISTS).forEach(name => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-secondary btn-sm';
+        btn.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+        btn.onclick = () => loadWatchlist(name);
+        container.appendChild(btn);
+      });
+      updateWatchlistButtonStates();
+    }
+
+    function initializeViewButtons() {
+      document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.onclick = () => {
+          viewMode = btn.dataset.view;
+          document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('btn-active'));
+          btn.classList.add('btn-active');
+          renderTable();
+        };
+        if (btn.dataset.view === 'both') {
+          btn.classList.add('btn-active');
+        }
+      });
+    }
+
+    function initializeDirectionButtons() {
+      document.querySelectorAll('[data-direction]').forEach(btn => {
+        btn.onclick = () => {
+          filterDirection = btn.dataset.direction;
+          document.querySelectorAll('[data-direction]').forEach(b => b.classList.remove('btn-active'));
+          btn.classList.add('btn-active');
+          renderTable();
+        };
+        if (btn.dataset.direction === 'all') {
+          btn.classList.add('btn-active');
+        }
+      });
+    }
+
+    function initializeEventListeners() {
+      document.getElementById('scanBtn').onclick = () => fetchData();
+      document.getElementById('autoRefreshBtn').onclick = toggleAutoRefresh;
+      document.getElementById('loadCustomBtn').onclick = loadCustomSymbols;
+      document.getElementById('alignedOnlyCheckbox').onchange = (e) => {
+        showAlignedOnly = e.target.checked;
+        renderTable();
+      };
+      document.getElementById('customSymbols').onkeypress = (e) => {
+        if (e.key === 'Enter') loadCustomSymbols();
+      };
+    }
+
+    function toggleAutoRefresh() {
+      isAutoRefresh = !isAutoRefresh;
+      const btn = document.getElementById('autoRefreshBtn');
+      const icon = document.getElementById('autoRefreshIcon');
+      const text = document.getElementById('autoRefreshText');
+
+      if (isAutoRefresh) {
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+        icon.textContent = '▶';
+        text.textContent = 'Auto';
+        autoRefreshInterval = setInterval(() => fetchData(), 60000);
+      } else {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
+        icon.textContent = '⏸';
+        text.textContent = 'Manual';
+        if (autoRefreshInterval) {
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+        }
+      }
+    }
+
+    function loadWatchlist(name) {
+      activeWatchlist = name;
+      currentSymbols = WATCHLISTS[name] || [];
+      document.getElementById('customSymbols').value = '';
+      updateWatchlistButtonStates();
+      renderSymbolChips();
+      fetchData();
+    }
+
+    function loadCustomSymbols() {
+      const input = document.getElementById('customSymbols').value;
+      const symbols = input.split(',')
+        .map(s => s.trim().toUpperCase())
+        .filter(s => s.length > 0);
+
+      if (symbols.length === 0) return;
+
+      activeWatchlist = 'custom';
+      currentSymbols = symbols;
+      updateWatchlistButtonStates();
+      renderSymbolChips();
+      fetchData();
+    }
+
+    function removeSymbol(symbol) {
+      currentSymbols = currentSymbols.filter(s => s !== symbol);
+      renderSymbolChips();
+      if (currentSymbols.length > 0) {
+        fetchData();
+      } else {
+        stocks = [];
+        renderTable();
+      }
+    }
+
+    function updateWatchlistButtonStates() {
+      document.getElementById('watchlistButtons').querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('btn-active');
+        if (btn.textContent.toLowerCase() === activeWatchlist) {
+          btn.classList.add('btn-active');
+        }
+      });
+    }
+
+    function renderSymbolChips() {
+      const container = document.getElementById('symbolChips');
+      container.innerHTML = '';
+
+      currentSymbols.forEach(symbol => {
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.innerHTML = `
+          <span>${symbol}</span>
+          <button onclick="removeSymbol('${symbol}')">✕</button>
+        `;
+        container.appendChild(chip);
+      });
+    }
+
+    async function fetchData() {
+      if (currentSymbols.length === 0 || isLoading) return;
+
+      isLoading = true;
+      document.getElementById('scanBtn').disabled = true;
+
+      try {
+        const symbolsParam = currentSymbols.join(',');
+
+        // Fetch both APIs in parallel
+        const [liquidityRes, dashboardRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/liquidity-hunter?symbols=${symbolsParam}`),
+          fetch(`${API_BASE_URL}/api/watchlist?symbols=${symbolsParam}&minScore=0&alignedOnly=false`)
+        ]);
+
+        const [liquidityData, dashboardData] = await Promise.all([
+          liquidityRes.json(),
+          dashboardRes.json()
+        ]);
+
+        // Combine results
+        stocks = currentSymbols.map(symbol => {
+          const liq = liquidityData.data?.find(s => s.symbol === symbol);
+          const dash = dashboardData.data?.find(s => s.symbol === symbol);
+
+          return {
+            symbol,
+            price: liq?.price || dash?.daily?.currentPrice || 0,
+            changePercent: liq?.changePercent || dash?.daily?.priceChangePercent || 0,
+            liquidity: liq || null,
+            dashboard: dash || null,
+          };
+        });
+
+        lastUpdate = new Date();
+        renderTable();
+        updateStats();
+        updateFooter();
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        document.getElementById('tableBody').innerHTML = `
+          <tr>
+            <td colspan="10" style="text-align: center; padding: 2rem; color: #ef4444;">
+              Error fetching data. Make sure the API endpoints are accessible.
+            </td>
+          </tr>
+        `;
+      } finally {
+        isLoading = false;
+        document.getElementById('scanBtn').disabled = false;
+      }
+    }
+
+    function getFilteredStocks() {
+      return stocks.filter(stock => {
+        const liq = stock.liquidity;
+        const dash = stock.dashboard;
+
+        if (showAlignedOnly) {
+          const isAligned = (liq?.aligned || dash?.aligned);
+          if (!isAligned) return false;
+        }
+
+        if (filterDirection !== 'all') {
+          const liqDir = liq?.alignmentDirection;
+          const dashDir = dash?.fiveMin?.direction > 0 ? 'bullish' :
+                         dash?.fiveMin?.direction < 0 ? 'bearish' : 'neutral';
+          if (liqDir !== filterDirection && dashDir !== filterDirection) return false;
+        }
+
+        return true;
+      });
+    }
+
+    function renderTable() {
+      const filteredStocks = getFilteredStocks();
+
+      // Render header
+      const thead = document.getElementById('tableHead');
+      let headers = '<tr><th>Symbol</th><th>Price</th>';
+
+      if (viewMode === 'both' || viewMode === 'liquidity') {
+        headers += '<th class="center">Liq Aligned</th><th class="center">FVGs</th><th class="center">Zones</th>';
+      }
+
+      if (viewMode === 'both' || viewMode === 'dashboard') {
+        headers += '<th class="center">Dash Aligned</th><th>5-Min Action</th><th>Daily Action</th>';
+      }
+
+      headers += '<th class="center"></th></tr>';
+      thead.innerHTML = headers;
+
+      // Render body
+      const tbody = document.getElementById('tableBody');
+
+      if (isLoading) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="loading">
+              <div class="spinner"></div>
+              Scanning ${currentSymbols.length} symbols...
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      if (filteredStocks.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="loading">
+              No stocks match the current filters.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      filteredStocks.forEach(stock => {
+        const row = document.createElement('tr');
+
+        let cells = `
+          <td><div class="symbol">${stock.symbol}</div></td>
+          <td>
+            <div class="price">$${stock.price.toFixed(2)}</div>
+            <div class="${stock.changePercent >= 0 ? 'positive' : 'negative'}" style="font-size: 0.75rem;">
+              ${stock.changePercent >= 0 ? '+' : ''}${stock.changePercent.toFixed(2)}%
+            </div>
+          </td>
+        `;
+
+        if (viewMode === 'both' || viewMode === 'liquidity') {
+          cells += `
+            <td class="center">
+              ${stock.liquidity?.aligned ? '<span class="check-icon">✓</span>' : '<span class="x-icon">✕</span>'}
+            </td>
+            <td class="center">
+              <span class="positive">${stock.liquidity?.fiveMin?.bullishFVGCount || 0}</span>
+              /
+              <span class="negative">${stock.liquidity?.fiveMin?.bearishFVGCount || 0}</span>
+            </td>
+            <td class="center" style="color: #f97316; font-weight: 600;">
+              ${stock.liquidity?.fiveMin?.liquidityZoneCount || 0}
+            </td>
+          `;
+        }
+
+        if (viewMode === 'both' || viewMode === 'dashboard') {
+          cells += `
+            <td class="center">
+              ${stock.dashboard?.aligned ? '<span class="check-icon">✓</span>' : '<span class="x-icon">✕</span>'}
+            </td>
+            <td>
+              <span class="${getActionClass(stock.dashboard?.fiveMin?.action)}">
+                ${stock.dashboard?.fiveMin?.action || 'N/A'}
+              </span>
+            </td>
+            <td>
+              <span class="${getActionClass(stock.dashboard?.daily?.action)}">
+                ${stock.dashboard?.daily?.action || 'N/A'}
+              </span>
+            </td>
+          `;
+        }
+
+        cells += `
+          <td class="center">
+            <button class="btn-secondary btn-sm" onclick="toggleExpanded('${stock.symbol}')">
+              ${expandedRow === stock.symbol ? '▲' : '▼'}
+            </button>
+          </td>
+        `;
+
+        row.innerHTML = cells;
+        tbody.appendChild(row);
+
+        // Expanded row
+        if (expandedRow === stock.symbol) {
+          const expandedTr = document.createElement('tr');
+          expandedTr.className = 'expanded-content';
+          expandedTr.innerHTML = `
+            <td colspan="10">
+              <div class="analysis-grid">
+                ${renderLiquidityAnalysis(stock)}
+                ${renderDashboardAnalysis(stock)}
+              </div>
+            </td>
+          `;
+          tbody.appendChild(expandedTr);
+        }
+      });
+
+      document.getElementById('showingCount').textContent = filteredStocks.length;
+    }
+
+    function renderLiquidityAnalysis(stock) {
+      if (!stock.liquidity || (viewMode !== 'both' && viewMode !== 'liquidity')) return '';
+
+      const liq = stock.liquidity;
+      return `
+        <div class="analysis-panel liquidity">
+          <div class="analysis-title liquidity">💧 Liquidity Hunter Analysis</div>
+          <div class="metrics-grid">
+            <div>
+              <div class="metric-label">5-Min FVGs:</div>
+              <div class="metric-value">
+                <span class="positive">${liq.fiveMin.bullishFVGCount}</span> /
+                <span class="negative">${liq.fiveMin.bearishFVGCount}</span>
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">Daily FVGs:</div>
+              <div class="metric-value">
+                <span class="positive">${liq.daily.bullishFVGCount}</span> /
+                <span class="negative">${liq.daily.bearishFVGCount}</span>
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">5-Min Delta:</div>
+              <div class="metric-value ${liq.fiveMin.delta >= 0 ? 'positive' : 'negative'}">
+                ${formatNumber(liq.fiveMin.delta)}
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">Daily Delta:</div>
+              <div class="metric-value ${liq.daily.delta >= 0 ? 'positive' : 'negative'}">
+                ${formatNumber(liq.daily.delta)}
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">Liq Zones:</div>
+              <div class="metric-value" style="color: #f97316;">${liq.fiveMin.liquidityZoneCount}</div>
+            </div>
+            <div>
+              <div class="metric-label">Alignment:</div>
+              <div class="metric-value" style="color: #06b6d4;">${liq.alignmentStrength}/100</div>
+            </div>
+          </div>
+          ${liq.aligned ? `
+            <div class="alert-box alert-cyan">
+              <strong>Aligned ${liq.alignmentDirection.toUpperCase()}</strong>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderDashboardAnalysis(stock) {
+      if (!stock.dashboard || (viewMode !== 'both' && viewMode !== 'dashboard')) return '';
+
+      const dash = stock.dashboard;
+      return `
+        <div class="analysis-panel dashboard">
+          <div class="analysis-title dashboard">📊 Decision Dashboard Analysis</div>
+          <div class="metrics-grid">
+            <div>
+              <div class="metric-label">5-Min Action:</div>
+              <div class="metric-value ${getActionClass(dash.fiveMin.action)}">
+                ${dash.fiveMin.action}
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">Daily Action:</div>
+              <div class="metric-value ${getActionClass(dash.daily.action)}">
+                ${dash.daily.action}
+              </div>
+            </div>
+            <div>
+              <div class="metric-label">BFCI:</div>
+              <div class="metric-value">${dash.fiveMin.bfci.toFixed(2)}</div>
+            </div>
+            <div>
+              <div class="metric-label">Core Value:</div>
+              <div class="metric-value">${dash.fiveMin.coreValue.toFixed(0)}</div>
+            </div>
+            <div>
+              <div class="metric-label">CCI:</div>
+              <div class="metric-value">${dash.fiveMin.cci.toFixed(0)}</div>
+            </div>
+            <div>
+              <div class="metric-label">Confidence:</div>
+              <div class="metric-value">${dash.fiveMin.confidence}</div>
+            </div>
+            <div>
+              <div class="metric-label">Position Size:</div>
+              <div class="metric-value">${dash.fiveMin.sizePercent}%</div>
+            </div>
+            <div>
+              <div class="metric-label">Combined Score:</div>
+              <div class="metric-value" style="color: #a855f7;">${dash.combinedScore.toFixed(1)}/12</div>
+            </div>
+          </div>
+          ${dash.fiveMin.prohibitionActive ? `
+            <div class="alert-box alert-red">
+              🛡️ Trading PROHIBITED
+            </div>
+          ` : ''}
+          ${dash.aligned ? `
+            <div class="alert-box alert-green">
+              <strong>Dashboard Aligned</strong>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function toggleExpanded(symbol) {
+      expandedRow = expandedRow === symbol ? null : symbol;
+      renderTable();
+    }
+
+    function updateStats() {
+      document.getElementById('symbolCount').textContent = currentSymbols.length;
+
+      const alignedCount = stocks.filter(s => s.liquidity?.aligned || s.dashboard?.aligned).length;
+      document.getElementById('alignedCount').textContent = alignedCount;
+
+      const bullishCount = stocks.filter(s =>
+        s.liquidity?.alignmentDirection === 'bullish' ||
+        (s.dashboard?.fiveMin?.direction > 0 && s.dashboard?.daily?.direction > 0)
+      ).length;
+      document.getElementById('bullishCount').textContent = bullishCount;
+
+      const bearishCount = stocks.filter(s =>
+        s.liquidity?.alignmentDirection === 'bearish' ||
+        (s.dashboard?.fiveMin?.direction < 0 && s.dashboard?.daily?.direction < 0)
+      ).length;
+      document.getElementById('bearishCount').textContent = bearishCount;
+    }
+
+    function updateFooter() {
+      const footer = document.getElementById('footer');
+      if (lastUpdate) {
+        footer.textContent = `Last updated: ${lastUpdate.toLocaleTimeString()} | Showing ${getFilteredStocks().length} of ${stocks.length} symbols | Auto-refresh: ${isAutoRefresh ? 'ON (60s)' : 'OFF'}`;
+      }
+    }
+
+    function formatNumber(num) {
+      if (num >= 1e9) return `${(num / 1e9).toFixed(2)}B`;
+      if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
+      if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
+      return num.toFixed(0);
+    }
+
+    function getActionClass(action) {
+      if (!action) return '';
+      if (action.includes('MAX LONG')) return 'action-max-long';
+      if (action.includes('STRONG LONG')) return 'action-strong-long';
+      if (action.includes('LONG')) return 'action-long';
+      if (action.includes('MAX SHORT')) return 'action-max-short';
+      if (action.includes('STRONG SHORT')) return 'action-strong-short';
+      if (action.includes('SHORT')) return 'action-short';
+      if (action.includes('PROHIBITED')) return 'action-prohibited';
+      return '';
+    }
+
+    // Initialize symbol chips on load
+    renderSymbolChips();
+  </script>
+</body>
+</html>
