@@ -61,12 +61,37 @@ const getExpiryDate = (daysOut: number) => {
   return expiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Validation helper to ensure no duplicate strike+expiration in spreads
+const validateSpread = (leg1: string, leg2: string): boolean => {
+  // Extract strike and expiration from strings like "Buy 105C Jan 12"
+  const extractDetails = (leg: string) => {
+    const match = leg.match(/(\d+)[CP]\s+([A-Za-z]+\s+\d+)/);
+    return match ? `${match[1]}-${match[2]}` : null;
+  };
+  
+  const details1 = extractDetails(leg1);
+  const details2 = extractDetails(leg2);
+  
+  // If we can't parse or they're different, it's valid
+  if (!details1 || !details2 || details1 !== details2) return true;
+  
+  // Same strike and expiration detected - invalid!
+  console.warn(`⚠️ Invalid spread detected: ${leg1} and ${leg2} have same strike and expiration`);
+  return false;
+};
+
 const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   const ideas = [];
   const basePrice = stockData?.price || 100;
   const timestamp = Date.now();
 
-  // 1. Bullish idea - Long Call Spread
+  // 1. Bullish idea - Long Call Spread (Different strikes, same expiration)
+  const callSpreadExpiry = getExpiryDate(21);
+  const callSpreadBuyStrike = Math.round(basePrice * 1.05);
+  const callSpreadSellStrike = Math.round(basePrice * 1.10);
+  const callBuyLeg = `Buy ${callSpreadBuyStrike}C ${callSpreadExpiry}`;
+  const callSellLeg = `Sell ${callSpreadSellStrike}C ${callSpreadExpiry}`;
+  
   ideas.push({
     id: timestamp + 1,
     symbol: symbol,
@@ -75,9 +100,10 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     riskReward: '1:3.2',
     timeframe: '2-3 weeks',
     entry: {
-      buy: `Buy ${Math.round(basePrice * 1.05)}C ${getExpiryDate(21)}`,
-      sell: `Sell ${Math.round(basePrice * 1.10)}C ${getExpiryDate(21)}`,
-      netDebit: Math.round(basePrice * 0.02 * 100)
+      buy: callBuyLeg,
+      sell: callSellLeg,
+      netDebit: Math.round(basePrice * 0.02 * 100),
+      note: `Buy lower strike (${callSpreadBuyStrike}), Sell higher strike (${callSpreadSellStrike})`
     },
     reasoning: [
       'Technical breakout pattern detected',
@@ -97,7 +123,13 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     tags: ['momentum', 'breakout', 'bullish']
   });
 
-  // 2. Neutral idea - Iron Condor
+  // 2. Neutral idea - Iron Condor (Four different strikes, same expiration)
+  const condorExpiry = getExpiryDate(30);
+  const sellCallStrike = Math.round(basePrice * 1.10);
+  const buyCallStrike = Math.round(basePrice * 1.12);
+  const sellPutStrike = Math.round(basePrice * 0.90);
+  const buyPutStrike = Math.round(basePrice * 0.88);
+  
   ideas.push({
     id: timestamp + 2,
     symbol: symbol,
@@ -106,11 +138,12 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     riskReward: '1:2.5',
     timeframe: '3-4 weeks',
     entry: {
-      sellCall: `Sell ${Math.round(basePrice * 1.10)}C ${getExpiryDate(30)}`,
-      buyCall: `Buy ${Math.round(basePrice * 1.12)}C ${getExpiryDate(30)}`,
-      sellPut: `Sell ${Math.round(basePrice * 0.90)}P ${getExpiryDate(30)}`,
-      buyPut: `Buy ${Math.round(basePrice * 0.88)}P ${getExpiryDate(30)}`,
-      netCredit: Math.round(basePrice * 0.015 * 100)
+      sellCall: `Sell ${sellCallStrike}C ${condorExpiry}`,
+      buyCall: `Buy ${buyCallStrike}C ${condorExpiry}`,
+      sellPut: `Sell ${sellPutStrike}P ${condorExpiry}`,
+      buyPut: `Buy ${buyPutStrike}P ${condorExpiry}`,
+      netCredit: Math.round(basePrice * 0.015 * 100),
+      note: `Range: ${buyPutStrike} to ${buyCallStrike}, Profit zone: ${sellPutStrike} to ${sellCallStrike}`
     },
     reasoning: [
       'IV rank elevated above 70%',
@@ -126,7 +159,13 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     tags: ['theta_play', 'premium_collection', 'neutral']
   });
 
-  // 3. Bearish idea - Bear Put Spread
+  // 3. Bearish idea - Bear Put Spread (Different strikes, same expiration)
+  const putSpreadExpiry = getExpiryDate(14);
+  const putSpreadBuyStrike = Math.round(basePrice * 0.95);
+  const putSpreadSellStrike = Math.round(basePrice * 0.90);
+  const putBuyLeg = `Buy ${putSpreadBuyStrike}P ${putSpreadExpiry}`;
+  const putSellLeg = `Sell ${putSpreadSellStrike}P ${putSpreadExpiry}`;
+  
   ideas.push({
     id: timestamp + 3,
     symbol: symbol,
@@ -135,9 +174,10 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     riskReward: '1:2.8',
     timeframe: '1-2 weeks',
     entry: {
-      buy: `Buy ${Math.round(basePrice * 0.95)}P ${getExpiryDate(14)}`,
-      sell: `Sell ${Math.round(basePrice * 0.90)}P ${getExpiryDate(14)}`,
-      netDebit: Math.round(basePrice * 0.015 * 100)
+      buy: putBuyLeg,
+      sell: putSellLeg,
+      netDebit: Math.round(basePrice * 0.015 * 100),
+      note: `Buy higher strike (${putSpreadBuyStrike}), Sell lower strike (${putSpreadSellStrike})`
     },
     reasoning: [
       'Bearish reversal pattern forming',
@@ -213,7 +253,10 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     tags: ['income', 'conservative', 'theta_play']
   });
 
-  // 6. Advanced play - Calendar Spread
+  // 6. Advanced play - Calendar Spread (Same strike, different expirations)
+  const calendarStrike = Math.round(basePrice);
+  const shortExpiry = getExpiryDate(21);
+  const longExpiry = getExpiryDate(45);
   ideas.push({
     id: timestamp + 6,
     symbol: symbol,
@@ -222,17 +265,18 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     riskReward: '1:2.2',
     timeframe: '2-4 weeks',
     entry: {
-      buyLong: `Buy ${Math.round(basePrice)}C ${getExpiryDate(45)}`,
-      sellShort: `Sell ${Math.round(basePrice)}C ${getExpiryDate(21)}`,
-      netDebit: Math.round(basePrice * 0.01 * 100)
+      longDated: `Buy ${calendarStrike}C ${longExpiry} (Long-dated)`,
+      shortDated: `Sell ${calendarStrike}C ${shortExpiry} (Near-term)`,
+      netDebit: Math.round(basePrice * 0.01 * 100),
+      note: `Same strike (${calendarStrike}), different expirations`
     },
     reasoning: [
       'Time decay advantage opportunity',
-      'Moderate volatility expected',
+      'Profit from near-term option expiring faster',
       'Low risk defined strategy',
-      'Profit from volatility differential'
+      'Profit from volatility differential between expirations'
     ],
-    targets: [`Max profit near ${basePrice.toFixed(2)} at near expiry`],
+    targets: [`Max profit near ${basePrice.toFixed(2)} at short expiry (${shortExpiry})`],
     stopLoss: 'Large move in either direction',
     maxProfit: Math.round(basePrice * 0.022 * 100),
     maxLoss: Math.round(basePrice * 0.01 * 100),
