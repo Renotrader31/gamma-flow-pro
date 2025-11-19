@@ -559,8 +559,10 @@
   </div>
 
   <script>
-    // Configuration
-    const API_BASE_URL = window.location.origin; // Change this if APIs are hosted elsewhere
+    // Configuration - IMPORTANT: Set this to your API server URL
+    // For local development: 'http://localhost:3000'
+    // For production: 'https://your-app.vercel.app' or window.location.origin if hosted together
+    const API_BASE_URL = 'http://localhost:3000';
 
     // Watchlists
     const WATCHLISTS = {
