@@ -10,7 +10,7 @@ import {
   Radio, PlayCircle, RefreshCw, Download, Save,
   Eye, Moon, Shield, AlertTriangle, Layers,
   DollarSign, Percent, Hash, Timer,
-  X, Brain, Briefcase, Building2, TrendingUpDown, Coins
+  X, Brain, Briefcase, Building2, TrendingUpDown, Coins, Droplets
 } from 'lucide-react'
 import { AITradeIdeas } from './components/AITradeIdeas'
 import { GEXDetailsModal } from './components/GEXDetailsModal'
@@ -479,6 +479,14 @@ export default function Home() {
             >
               <Target className="w-5 h-5" />
               Watchlist
+            </Link>
+
+            <Link
+              href="/liquidity-scanner"
+              className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+            >
+              <Droplets className="w-5 h-5" />
+              Liquidity Scanner
             </Link>
           </div>
         </div>
