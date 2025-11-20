@@ -61,28 +61,58 @@ const getExpiryDate = (daysOut: number) => {
   return expiryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// Round strike price to nearest valid option strike based on standard intervals
+const roundToValidStrike = (price: number): number => {
+  // Determine strike interval based on stock price
+  let interval: number;
+
+  if (price < 25) {
+    // For stocks under $25, use $2.50 intervals
+    interval = 2.5;
+  } else if (price < 200) {
+    // For stocks $25-$200, use $5 intervals
+    interval = 5;
+  } else {
+    // For stocks over $200, use $10 intervals
+    interval = 10;
+  }
+
+  // Round to nearest valid strike
+  return Math.round(price / interval) * interval;
+};
+
 // Smart strike calculation that ensures different strikes for spreads
+// AND that strikes are valid option strikes based on standard intervals
 const getStrikesForSpread = (basePrice: number, lowerMultiplier: number, higherMultiplier: number): [number, number] => {
-  let lowerStrike = Math.round(basePrice * lowerMultiplier);
-  let higherStrike = Math.round(basePrice * higherMultiplier);
-  
+  // Calculate target strikes
+  const targetLower = basePrice * lowerMultiplier;
+  const targetHigher = basePrice * higherMultiplier;
+
+  // Round to valid option strikes
+  let lowerStrike = roundToValidStrike(targetLower);
+  let higherStrike = roundToValidStrike(targetHigher);
+
+  // Determine the interval being used
+  let interval: number;
+  if (basePrice < 25) {
+    interval = 2.5;
+  } else if (basePrice < 200) {
+    interval = 5;
+  } else {
+    interval = 10;
+  }
+
   // If strikes are the same due to rounding, adjust them
   if (lowerStrike === higherStrike) {
-    // Try floor/ceil approach
-    lowerStrike = Math.floor(basePrice * lowerMultiplier);
-    higherStrike = Math.ceil(basePrice * higherMultiplier);
-    
-    // If still the same, force a difference
-    if (lowerStrike === higherStrike) {
-      higherStrike = lowerStrike + 1;
-    }
+    // Move higher strike up by one interval
+    higherStrike = lowerStrike + interval;
   }
-  
+
   // Ensure lower is actually lower than higher
   if (lowerStrike >= higherStrike) {
-    higherStrike = lowerStrike + 1;
+    higherStrike = lowerStrike + interval;
   }
-  
+
   return [lowerStrike, higherStrike];
 };
 
@@ -251,6 +281,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   });
 
   // 5. Income play - Covered Call
+  const coveredCallStrike = roundToValidStrike(basePrice * 1.05);
   ideas.push({
     id: timestamp + 5,
     symbol: symbol,
@@ -260,7 +291,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
     timeframe: '4-5 weeks',
     entry: {
       ownShares: `Own 100 shares at ${basePrice.toFixed(2)}`,
-      sellCall: `Sell ${Math.round(basePrice * 1.05)}C ${getExpiryDate(35)}`,
+      sellCall: `Sell ${coveredCallStrike}C ${getExpiryDate(35)}`,
       netCredit: Math.round(basePrice * 0.02 * 100)
     },
     reasoning: [
@@ -269,7 +300,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
       'Controlled upside with downside protection',
       'Stock in consolidation phase'
     ],
-    targets: [`Max profit at ${(basePrice * 1.05).toFixed(2)}`],
+    targets: [`Max profit at ${coveredCallStrike.toFixed(2)}`],
     stopLoss: 'Protective puts or stock sale',
     maxProfit: Math.round(basePrice * 0.07 * 100),
     maxLoss: 'Stock decline risk',
@@ -278,7 +309,7 @@ const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   });
 
   // 6. Advanced play - Calendar Spread (Same strike, different expirations)
-  const calendarStrike = Math.round(basePrice);
+  const calendarStrike = roundToValidStrike(basePrice);
   const shortExpiry = getExpiryDate(21);
   const longExpiry = getExpiryDate(45);
   ideas.push({
