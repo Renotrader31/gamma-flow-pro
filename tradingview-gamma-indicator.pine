@@ -1,0 +1,84 @@
+//@version=5
+indicator("SPY Gamma Levels", overlay=true)
+
+// ============================================================================
+// INPUT SETTINGS
+// ============================================================================
+
+// Negative Gamma Levels (Red, Dashed)
+negGamma1Enabled = input.bool(true, "Enable Neg Gamma 1", group="Negative Gamma")
+negGamma1 = input.float(655.00, "Neg Gamma Level 1", group="Negative Gamma")
+
+negGamma2Enabled = input.bool(true, "Enable Neg Gamma 2", group="Negative Gamma")
+negGamma2 = input.float(650.00, "Neg Gamma Level 2", group="Negative Gamma")
+
+negGamma3Enabled = input.bool(true, "Enable Neg Gamma 3", group="Negative Gamma")
+negGamma3 = input.float(660.00, "Neg Gamma Level 3", group="Negative Gamma")
+
+negGamma4Enabled = input.bool(false, "Enable Neg Gamma 4", group="Negative Gamma")
+negGamma4 = input.float(0.00, "Neg Gamma Level 4", group="Negative Gamma")
+
+negGamma5Enabled = input.bool(false, "Enable Neg Gamma 5", group="Negative Gamma")
+negGamma5 = input.float(0.00, "Neg Gamma Level 5", group="Negative Gamma")
+
+// Positive Gamma Levels (Green, Solid)
+posGamma1Enabled = input.bool(true, "Enable Pos Gamma 1", group="Positive Gamma")
+posGamma1 = input.float(670.00, "Pos Gamma Level 1", group="Positive Gamma")
+
+posGamma2Enabled = input.bool(true, "Enable Pos Gamma 2", group="Positive Gamma")
+posGamma2 = input.float(674.00, "Pos Gamma Level 2", group="Positive Gamma")
+
+posGamma3Enabled = input.bool(false, "Enable Pos Gamma 3", group="Positive Gamma")
+posGamma3 = input.float(0.00, "Pos Gamma Level 3", group="Positive Gamma")
+
+posGamma4Enabled = input.bool(false, "Enable Pos Gamma 4", group="Positive Gamma")
+posGamma4 = input.float(0.00, "Pos Gamma Level 4", group="Positive Gamma")
+
+posGamma5Enabled = input.bool(false, "Enable Pos Gamma 5", group="Positive Gamma")
+posGamma5 = input.float(0.00, "Pos Gamma Level 5", group="Positive Gamma")
+
+// Style Settings
+negGammaColor = input.color(color.red, "Negative Gamma Color", group="Style")
+posGammaColor = input.color(color.green, "Positive Gamma Color", group="Style")
+lineWidth = input.int(1, "Line Width", minval=1, maxval=3, group="Style")
+
+// ============================================================================
+// DRAW HORIZONTAL LINES
+// ============================================================================
+
+// Negative Gamma Lines (Dashed)
+if negGamma1Enabled
+    hline(negGamma1, title='Neg GEX $' + str.tostring(negGamma1), color=negGammaColor, linestyle=hline.style_dashed, linewidth=lineWidth)
+
+if negGamma2Enabled
+    hline(negGamma2, title='Neg GEX $' + str.tostring(negGamma2), color=negGammaColor, linestyle=hline.style_dashed, linewidth=lineWidth)
+
+if negGamma3Enabled
+    hline(negGamma3, title='Neg GEX $' + str.tostring(negGamma3), color=negGammaColor, linestyle=hline.style_dashed, linewidth=lineWidth)
+
+if negGamma4Enabled
+    hline(negGamma4, title='Neg GEX $' + str.tostring(negGamma4), color=negGammaColor, linestyle=hline.style_dashed, linewidth=lineWidth)
+
+if negGamma5Enabled
+    hline(negGamma5, title='Neg GEX $' + str.tostring(negGamma5), color=negGammaColor, linestyle=hline.style_dashed, linewidth=lineWidth)
+
+// Positive Gamma Lines (Solid)
+if posGamma1Enabled
+    hline(posGamma1, title='Pos GEX $' + str.tostring(posGamma1), color=posGammaColor, linestyle=hline.style_solid, linewidth=lineWidth)
+
+if posGamma2Enabled
+    hline(posGamma2, title='Pos GEX $' + str.tostring(posGamma2), color=posGammaColor, linestyle=hline.style_solid, linewidth=lineWidth)
+
+if posGamma3Enabled
+    hline(posGamma3, title='Pos GEX $' + str.tostring(posGamma3), color=posGammaColor, linestyle=hline.style_solid, linewidth=lineWidth)
+
+if posGamma4Enabled
+    hline(posGamma4, title='Pos GEX $' + str.tostring(posGamma4), color=posGammaColor, linestyle=hline.style_solid, linewidth=lineWidth)
+
+if posGamma5Enabled
+    hline(posGamma5, title='Pos GEX $' + str.tostring(posGamma5), color=posGammaColor, linestyle=hline.style_solid, linewidth=lineWidth)
+
+// ============================================================================
+// OPTIONAL: Plot invisible line to make indicator valid
+// ============================================================================
+plot(na, title="SPY Gamma Levels")
