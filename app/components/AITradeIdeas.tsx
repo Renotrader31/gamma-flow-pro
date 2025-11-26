@@ -135,6 +135,27 @@ const validateSpread = (leg1: string, leg2: string): boolean => {
   return false;
 };
 
+// Fetch real trade ideas from the enhanced API
+const fetchRealTradeIdeas = async (symbol?: string) => {
+  try {
+    const url = symbol 
+      ? `/api/trade-ideas?symbol=${symbol}`
+      : '/api/trade-ideas?limit=12';
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'success' && data.data) {
+      return data.data;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching real trade ideas:', error);
+    return [];
+  }
+};
+
+// Fallback generator when API fails (keeps old logic as backup)
 const generateIdeasForSymbol = (symbol: string, stockData?: any) => {
   const ideas = [];
   const basePrice = stockData?.price || 100;
@@ -359,21 +380,26 @@ export const AITradeIdeas = ({ stock, onClose }: { stock?: any; onClose: () => v
       if (showLoading) setLoading(true);
       else setRefreshing(true);
 
-      // If a specific symbol is provided, generate ideas for it
+      // If a specific symbol is provided, fetch ideas for it from the API
       if (symbolToFetch) {
-        const ideas = generateIdeasForSymbol(symbolToFetch, stock);
-        setTradeIdeas(ideas);
+        const realIdeas = await fetchRealTradeIdeas(symbolToFetch);
+        if (realIdeas.length > 0) {
+          setTradeIdeas(realIdeas);
+        } else {
+          // Fallback to generated ideas if API fails
+          const ideas = generateIdeasForSymbol(symbolToFetch, stock);
+          setTradeIdeas(ideas);
+        }
         setLoading(false);
         setRefreshing(false);
         setLastUpdate(new Date());
         return;
       }
 
-      // Try to fetch from API
-      const response = await fetch('/api/options-flow');
-      const data = await response.json();
-      if (data.tradeIdeas && data.tradeIdeas.length > 0) {
-        setTradeIdeas(data.tradeIdeas);
+      // Try to fetch real trade ideas from the enhanced API
+      const realIdeas = await fetchRealTradeIdeas();
+      if (realIdeas.length > 0) {
+        setTradeIdeas(realIdeas);
       } else {
         // Fallback: Generate ideas for top symbols
         const fallbackIdeas = [
@@ -427,11 +453,11 @@ export const AITradeIdeas = ({ stock, onClose }: { stock?: any; onClose: () => v
 
     setSearchLoading(true);
     try {
-      const response = await fetch(`/api/options-flow?symbol=${searchSymbol}`);
-      const data = await response.json();
-
-      if (data.tradeIdeas && data.tradeIdeas.length > 0) {
-        setTradeIdeas(data.tradeIdeas);
+      // Use the enhanced trade ideas API
+      const realIdeas = await fetchRealTradeIdeas(searchSymbol);
+      
+      if (realIdeas.length > 0) {
+        setTradeIdeas(realIdeas);
       } else {
         const generatedIdeas = generateIdeasForSymbol(searchSymbol);
         setTradeIdeas(generatedIdeas);

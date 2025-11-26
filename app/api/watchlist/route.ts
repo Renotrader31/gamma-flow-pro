@@ -33,11 +33,11 @@ async function fetchPolygonCandles(
   timespan: 'minute' | 'day',
   limit: number = 500
 ): Promise<CandleData[]> {
-  // Hardcoded API key (use environment variable in production for security)
-  const apiKey = process.env.POLYGON_API_KEY || '75rlu6cWGNnIqqR_x8M384YUjBgGk6kT';
+  const apiKey = process.env.POLYGON_API_KEY;
 
   if (!apiKey) {
-    console.warn('POLYGON_API_KEY not found, using mock data');
+    console.error('❌ POLYGON_API_KEY not set in environment variables!');
+    console.error('Add it in Vercel: Settings → Environment Variables → POLYGON_API_KEY');
     return generateMockCandles(symbol, limit, timespan === 'minute' ? '5m' : '1d');
   }
 
