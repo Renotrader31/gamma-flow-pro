@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { AITradeIdeas } from './components/AITradeIdeas'
 import { GEXDetailsModal } from './components/GEXDetailsModal'
+import { RADIndicatorsModal } from './components/RADIndicatorsModal'
 
 // Helper functions
 const formatNumber = (num: any) => {
@@ -45,6 +46,7 @@ export default function Home() {
   const [selectedStock, setSelectedStock] = useState<any>(null)
   const [showGEXDetails, setShowGEXDetails] = useState(false)
   const [showAIIdeas, setShowAIIdeas] = useState(false)
+  const [showRADIndicators, setShowRADIndicators] = useState(false)
   const [marketStatus, setMarketStatus] = useState('closed')
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -633,15 +635,28 @@ export default function Home() {
                               </div>
                             </td>
                             <td className="p-3 text-center">
-                              <button
-                                onClick={() => {
-                                  setSelectedStock(stock)
-                                  setShowAIIdeas(true)
-                                }}
-                                className="text-purple-400 hover:text-purple-300"
-                              >
-                                <Sparkles className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(stock)
+                                    setShowRADIndicators(true)
+                                  }}
+                                  className="text-cyan-400 hover:text-cyan-300"
+                                  title="RAD Indicators"
+                                >
+                                  <Activity className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(stock)
+                                    setShowAIIdeas(true)
+                                  }}
+                                  className="text-purple-400 hover:text-purple-300"
+                                  title="AI Trade Ideas"
+                                >
+                                  <Sparkles className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         </>
@@ -821,15 +836,28 @@ export default function Home() {
                               </div>
                             </td>
                             <td className="p-3 text-center">
-                              <button
-                                onClick={() => {
-                                  setSelectedStock(stock)
-                                  setShowAIIdeas(true)
-                                }}
-                                className="text-purple-400 hover:text-purple-300"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(stock)
+                                    setShowRADIndicators(true)
+                                  }}
+                                  className="text-cyan-400 hover:text-cyan-300"
+                                  title="RAD Indicators"
+                                >
+                                  <Activity className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(stock)
+                                    setShowAIIdeas(true)
+                                  }}
+                                  className="text-purple-400 hover:text-purple-300"
+                                  title="AI Trade Ideas"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         </>
@@ -854,6 +882,13 @@ export default function Home() {
         <AITradeIdeas
           stock={selectedStock}
           onClose={() => setShowAIIdeas(false)}
+        />
+      )}
+      {showRADIndicators && selectedStock && (
+        <RADIndicatorsModal
+          symbol={selectedStock.symbol}
+          currentPrice={selectedStock.price}
+          onClose={() => setShowRADIndicators(false)}
         />
       )}
     </div>
