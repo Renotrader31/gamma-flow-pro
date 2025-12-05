@@ -413,5 +413,5 @@ export function calculateVolumeConcentration(
     dominantFlow = 'Put Selling';
   }
   
-  return { callBuyPercent, putBuyPercent, dominantFlow };
+  return Math.round(Math.max(0, Math.min(100, score)));
 }
