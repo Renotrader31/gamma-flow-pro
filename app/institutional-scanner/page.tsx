@@ -45,6 +45,26 @@ export default function InstitutionalScanner() {
       const stocks: StockData[] = data.data || data.stocks || data || [];
       
       const processed = processStocksForMode(stocks, scanMode, 50);
+      // Generate signals for each result
+processed.forEach(result => {
+  const signals: string[] = [];
+  const stock = stocks.find(s => s.symbol === result.symbol);
+  
+  if (stock) {
+    if (stock.flowScore >= 80) signals.push('🟢 Strong Flow');
+    if (stock.netPremium > 500000) signals.push('💰 High Premium');
+    if (stock.netPremium < -500000) signals.push('🔴 Bearish Premium');
+    if (stock.liquidity?.isSignificantBuying) signals.push('📈 Heavy Buying');
+    if (stock.liquidity?.isSignificantSelling) signals.push('📉 Heavy Selling');
+    if (stock.gex > 1000000) signals.push('🧲 High GEX');
+    if (stock.putCallRatio < 0.7) signals.push('📞 Call Heavy');
+    if (stock.putCallRatio > 1.3) signals.push('📕 Put Heavy');
+    if (stock.changePercent > 10) signals.push('🚀 Surging');
+    if (stock.changePercent < -10) signals.push('💥 Dumping');
+  }
+  
+  result.signals = signals.slice(0, 3);
+});
       setResults(processed);
       setLastUpdated(new Date());
     } catch (err) {
