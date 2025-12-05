@@ -208,15 +208,13 @@ export function getScoreColor(score: number): string {
  * Get score label based on value
  */
 export function getScoreLabel(score: number): string {
-  if (score >= 80) return 'Strong Buy';
-  if (score >= 65) return 'Buy';
-  if (score >= 55) return 'Lean Bullish';
-  if (score >= 45) return 'Neutral';
-  if (score >= 35) return 'Lean Bearish';
-  if (score >= 20) return 'Sell';
-  return 'Strong Sell';
+  if (score >= 85) return 'Strong Buy';
+  if (score >= 75) return 'Buy';
+  if (score >= 65) return 'Watch';
+  if (score >= 50) return 'Neutral';
+  if (score >= 40) return 'Weak';
+  return 'Avoid';
 }
-
 /**
  * Filter stocks by minimum score threshold
  */
