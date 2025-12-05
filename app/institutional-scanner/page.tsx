@@ -42,7 +42,7 @@ export default function InstitutionalScanner() {
       if (!response.ok) throw new Error('Failed to fetch stocks');
       
       const data = await response.json();
-      const stocks: StockData[] = data.stocks || data || [];
+      const stocks: StockData[] = data.data || data.stocks || data || [];
       
       const processed = processStocksForMode(stocks, scanMode, 50);
       setResults(processed);
