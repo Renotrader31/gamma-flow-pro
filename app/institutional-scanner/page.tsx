@@ -290,7 +290,7 @@ export default function InstitutionalScanner() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`text-sm ${result.osvScore >= 60 ? 'text-purple-400' : 'text-gray-500'}`}>
-                        {result.osvScore}
+                        {Math.round(result.osvScore)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
