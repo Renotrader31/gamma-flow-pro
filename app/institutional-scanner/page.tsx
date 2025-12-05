@@ -318,18 +318,28 @@ processed.forEach(result => {
                         {result.liquidityScore}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1 max-w-[250px]">
-                        {result.signals.slice(0, 3).map((signal, i) => (
-                          <span
-                            key={i}
-                            className="text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-300"
-                          >
-                            {signal}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
+               <td className="px-4 py-3">
+  <div className="flex flex-wrap gap-1 max-w-[250px]">
+    {result.changePercent > 10 && (
+      <span className="text-xs bg-green-900 px-2 py-0.5 rounded text-green-300">🚀 Surging</span>
+    )}
+    {result.changePercent < -10 && (
+      <span className="text-xs bg-red-900 px-2 py-0.5 rounded text-red-300">💥 Dumping</span>
+    )}
+    {result.tankScore >= 75 && (
+      <span className="text-xs bg-blue-900 px-2 py-0.5 rounded text-blue-300">🟢 Strong Flow</span>
+    )}
+    {result.liquidityScore >= 70 && (
+      <span className="text-xs bg-purple-900 px-2 py-0.5 rounded text-purple-300">📊 High Liq</span>
+    )}
+    {result.osvScore >= 80 && (
+      <span className="text-xs bg-yellow-900 px-2 py-0.5 rounded text-yellow-300">📈 Bullish Options</span>
+    )}
+    {result.mpLpScore >= 70 && (
+      <span className="text-xs bg-orange-900 px-2 py-0.5 rounded text-orange-300">🧲 GEX Support</span>
+    )}
+  </div>
+</td>
                   </tr>
                 ))
               )}
